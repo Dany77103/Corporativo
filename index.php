@@ -1,10 +1,9 @@
 <?php
 session_start();
+require_once 'config_roles.php';
 
-// ==========================================
-// 1. GUARDIÁN DE SEGURIDAD
-// ==========================================
-if (!isset($_SESSION['usuario']) || $_SESSION['rol'] !== 'admin') {
+// Validar inicio de sesión
+if (!isset($_SESSION['usuario']) || !tienePermiso('ver')) {
     session_unset();
     session_destroy();
     header("Location: login.php");
