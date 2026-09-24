@@ -51,8 +51,12 @@ function obtenerPermisosPorRol($rol) {
     ];
 
     return $permisos[$rol] ?? [
-        'ver' => false, 'editar' => false, 'borrar' => false, 
-        'crear_equipos' => false, 'crear_usuarios' => false, 'gestionar_admins' => false
+        'ver'              => false, 
+        'editar'           => false, 
+        'borrar'           => false, 
+        'crear_equipos'    => false, 
+        'crear_usuarios'   => false, 
+        'gestionar_admins' => false
     ];
 }
 

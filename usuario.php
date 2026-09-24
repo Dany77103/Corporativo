@@ -18,7 +18,7 @@ $database = "proyecto";
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $user, $password, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 } catch (PDOException $e) {
@@ -26,7 +26,7 @@ try {
 }
 
 $mensaje = "";
-$error = "";
+$error   = "";
 
 // Lógica para Crear Usuario
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_crear_usuario'])) {
@@ -35,15 +35,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_crear_usuario'
     $pass    = trim($_POST['password'] ?? '');
     $rol     = trim($_POST['rol'] ?? 'lector');
 
-    if (empty($nombre) || empty($usuario) || empty($pass)) {
-        $error = "Todos los campos obligatorios deben completarse.";
+    if (empty($_POST['usuario']) || empty($_POST['password']) || empty($_POST['nombre'])) {
+    die("Error: Ningún campo puede quedar vacío.");
+
     } else {
         // Validar si el usuario actual puede asignar el rol solicitado
         if (($rol === ROL_SUPERADMIN || $rol === ROL_ADMIN) && !tienePermiso('gestionar_admins')) {
             $error = "No tienes privilegios para asignar roles de Administrador o Superadmin.";
         } else {
             $passHash = password_hash($pass, PASSWORD_BCRYPT);
-            $stmt = $pdo->prepare("INSERT INTO usuarios (nombre, usuario, password, rol) VALUES (:nombre, :usuario, :pass, :rol)");
+            $stmt     = $pdo->prepare("INSERT INTO usuarios (nombre, usuario, password, rol) VALUES (:nombre, :usuario, :pass, :rol)");
             try {
                 $stmt->execute([
                     ':nombre'  => $nombre,
@@ -88,46 +89,77 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
             --brand-bg: #F4F8F7;
             --brand-border: #D1E5E3;
         }
-        body { background-color: var(--brand-bg); font-family: 'Segoe UI', sans-serif; padding: 20px; }
-        .card-custom { border-radius: 20px; border: 1px solid var(--brand-border); background: white; padding: 20px; }
-        .btn-gsb { background-color: var(--brand-primary); color: white; border-radius: 50px; }
-        .btn-gsb:hover { background-color: var(--brand-dark); color: white; }
+        body { 
+            background-color: var(--brand-bg); 
+            font-family: 'Segoe UI', sans-serif; 
+            padding: 20px; 
+        }
+        .card-custom { 
+            border-radius: 20px; 
+            border: 1px solid var(--brand-border); 
+            background: white; 
+            padding: 20px; 
+        }
+        .btn-gsb { 
+            background-color: var(--brand-primary); 
+            color: white; 
+            border-radius: 50px; 
+        }
+        .btn-gsb:hover { 
+            background-color: var(--brand-dark); 
+            color: white; 
+        }
     </style>
 </head>
 <body>
 
 <div class="container max-width-1000">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold" style="color: var(--brand-primary);"><i class="bi bi-people-fill me-2"></i>Administración de Usuarios</h3>
-        <a href="index.php" class="btn btn-outline-secondary rounded-pill"><i class="bi bi-arrow-left me-1"></i> Volver al Inventario</a>
+        <h3 class="fw-bold" style="color: var(--brand-primary);">
+            <i class="bi bi-people-fill me-2"></i>Administración de Usuarios
+        </h3>
+        <a href="index.php" class="btn btn-outline-secondary rounded-pill">
+            <i class="bi bi-arrow-left me-1"></i> Volver al Inventario
+        </a>
     </div>
 
     <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success border-0 shadow-sm mb-3"><?php echo htmlspecialchars($mensaje); ?></div>
+        <div class="alert alert-success border-0 shadow-sm mb-3">
+            <?php echo htmlspecialchars($mensaje); ?>
+        </div>
     <?php endif; ?>
+
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger border-0 shadow-sm mb-3"><?php echo htmlspecialchars($error); ?></div>
+        <div class="alert alert-danger border-0 shadow-sm mb-3">
+            <?php echo htmlspecialchars($error); ?>
+        </div>
     <?php endif; ?>
 
     <div class="row">
         <!-- Formulario Registro -->
         <div class="col-md-4 mb-4">
             <div class="card card-custom shadow-sm">
-                <h6 class="fw-bold mb-3" style="color: var(--brand-primary);"><i class="bi bi-person-plus-fill me-1"></i> Nuevo Usuario</h6>
+                <h6 class="fw-bold mb-3" style="color: var(--brand-primary);">
+                    <i class="bi bi-person-plus-fill me-1"></i> Nuevo Usuario
+                </h6>
                 <form action="usuarios.php" method="POST">
                     <input type="hidden" name="accion_crear_usuario" value="1">
+                    
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Nombre Completo</label>
                         <input type="text" name="nombre" class="form-control" required>
                     </div>
+
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Usuario</label>
                         <input type="text" name="usuario" class="form-control" required>
                     </div>
+
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Contraseña</label>
                         <input type="password" name="password" class="form-control" required>
                     </div>
+
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Rol</label>
                         <select name="rol" class="form-select" required>
@@ -139,7 +171,10 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
                             <?php endif; ?>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-gsb w-100 fw-bold mt-2"><i class="bi bi-save me-1"></i> Guardar Usuario</button>
+
+                    <button type="submit" class="btn btn-gsb w-100 fw-bold mt-2">
+                        <i class="bi bi-save me-1"></i> Guardar Usuario
+                    </button>
                 </form>
             </div>
         </div>
@@ -147,7 +182,9 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
         <!-- Tabla Usuarios -->
         <div class="col-md-8">
             <div class="card card-custom shadow-sm">
-                <h6 class="fw-bold mb-3" style="color: var(--brand-primary);"><i class="bi bi-list-ul me-1"></i> Usuarios Registrados</h6>
+                <h6 class="fw-bold mb-3" style="color: var(--brand-primary);">
+                    <i class="bi bi-list-ul me-1"></i> Usuarios Registrados
+                </h6>
                 <div class="table-responsive">
                     <table class="table align-middle">
                         <thead class="table-light">
@@ -166,7 +203,9 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
                                     <td><span class="badge bg-secondary"><?php echo strtoupper($u['rol']); ?></span></td>
                                     <td class="text-center">
                                         <?php if ($u['rol'] !== 'superadmin' && tienePermiso('gestionar_admins')): ?>
-                                            <a href="usuarios.php?eliminar=<?php echo $u['id']; ?>" class="btn btn-sm btn-outline-danger border-0" onclick="return confirm('¿Eliminar usuario?')"><i class="bi bi-trash"></i></a>
+                                            <a href="usuarios.php?eliminar=<?php echo $u['id']; ?>" class="btn btn-sm btn-outline-danger border-0" onclick="return confirm('¿Eliminar usuario?')">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
                                         <?php else: ?>
                                             <span class="text-muted small">N/A</span>
                                         <?php endif; ?>

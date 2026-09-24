@@ -1,8 +1,9 @@
 <?php
 session_start();
 
-if (isset($_SESSION['usuario']) && $_SESSION['rol'] === 'admin') {
-    header("Location: home.php");
+// Si el usuario ya inició sesión, redirigir al inventario
+if (isset($_SESSION['usuario'])) {
+    header("Location: inicio.php");
     exit();
 }
 
@@ -28,17 +29,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($result && $result->num_rows > 0) {
             $row = $result->fetch_assoc();
             
-            if (password_verify($password_input, $row['password']) || $password_input == $row['password']) {
-                if ($row['rol'] === 'admin') {
-                    $_SESSION['usuario'] = $row['usuario'];
-                    $_SESSION['nombre']  = $row['nombre'];
-                    $_SESSION['rol']     = $row['rol']; 
-                    
-                    header("Location: inicio.php");
-                    exit();
-                } else {
-                    $error_message = "Acceso denegado. Su cuenta no tiene privilegios de Administrador.";
-                }
+            // Verifica contraseñas encriptadas (password_verify) o en texto plano
+            if (password_verify($password_input, $row['password']) || $password_input === $row['password']) {
+                
+                // Guardar datos en la sesión para cualquier rol
+                $_SESSION['usuario'] = $row['usuario'];
+                $_SESSION['nombre']  = $row['nombre'];
+                $_SESSION['rol']     = $row['rol']; 
+                
+                header("Location: index.php");
+                exit();
 
             } else {
                 $error_message = "Contraseña incorrecta. Inténtelo de nuevo.";
@@ -189,7 +189,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         </div>
         <h3 class="fw-bold m-0" style="color: var(--brand-dark);">GSB CORP</h3>
         <p class="small fw-bold text-uppercase mt-1 mb-0" style="color: var(--brand-green); letter-spacing: 0.5px;">
-            <i class="bi bi-exclamation-octagon"></i> Acceso Administradores
+            <i class="bi bi-exclamation-octagon"></i> Acceso Sistema
         </p>
     </div>
 
@@ -203,7 +203,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <form action="login.php" method="POST" autocomplete="off">
         <div class="form-floating mb-3 text-start">
             <input type="text" class="form-control" id="usuario" name="usuario" placeholder="Usuario" required>
-            <label for="usuario"><i class="bi bi-person-badge-fill text-muted me-1"></i> ID de Administrador</label>
+            <label for="usuario"><i class="bi bi-person-badge-fill text-muted me-1"></i> ID de Usuario</label>
         </div>
         
         <div class="form-floating mb-4 text-start">

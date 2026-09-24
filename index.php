@@ -67,8 +67,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_editar'])) {
         ':mac'            => trim($_POST['mac'] ?? ''),
         ':observaciones'  => trim($_POST['observaciones'] ?? ''),
         ':asignacion_gsb' => trim($_POST['asignacion_gsb'] ?? ''),
-        ':pais'           => trim($_POST['pais'] ?? ''),
-        ':ciudad'         => trim($_POST['ciudad'] ?? ''),
+        ':pais'           => trim($_POST['PAIS'] ?? ''),
+        ':ciudad'         => trim($_POST['CIUDAD'] ?? ''),
         ':asignacion_vp'  => trim($_POST['asignacion_vp'] ?? ''),
         ':act_directory'  => trim($_POST['act_directory'] ?? ''),
         ':mfa'            => trim($_POST['mfa'] ?? ''),
@@ -115,8 +115,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_registrar'])) 
         ':mac'            => trim($_POST['mac'] ?? ''),
         ':observaciones'  => trim($_POST['observaciones'] ?? ''),
         ':asignacion_gsb' => trim($_POST['asignacion_gsb'] ?? ''),
-        ':pais'           => trim($_POST['pais'] ?? ''),
-        ':ciudad'         => trim($_POST['ciudad'] ?? ''),
+        ':pais'           => trim($_POST['PAIS'] ?? ''),
+        ':ciudad'         => trim($_POST['CIUDAD'] ?? ''),
         ':asignacion_vp'  => trim($_POST['asignacion_vp'] ?? ''),
         ':act_directory'  => trim($_POST['act_directory'] ?? ''),
         ':mfa'            => trim($_POST['mfa'] ?? ''),
@@ -540,15 +540,15 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
         }
 
         .table-reportes {
-    width: 100% !important;
-    table-layout: auto;
-}
+            width: 100% !important;
+            table-layout: auto;
+        }
 
-.table-reportes th, 
-.table-reportes td {
-    white-space: nowrap;
-    padding: 10px 12px !important;
-}
+        .table-reportes th, 
+        .table-reportes td {
+            white-space: nowrap;
+            padding: 10px 12px !important;
+        }
 
         .table-excel-mode th {
             background-color: var(--brand-primary) !important;
@@ -569,21 +569,19 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
             word-break: break-word;
         }
 
-        /* Centrado de celdas en tablas */
-.table td.text-center, .table th.text-center {
-    text-align: center !important;
-    vertical-align: middle !important;
-}
+        .table td.text-center, .table th.text-center {
+            text-align: center !important;
+            vertical-align: middle !important;
+        }
 
-/* Evita que el contenido de los badges rompa la celda o se empalme */
-.table td {
-    vertical-align: middle !important;
-}
+        .table td {
+            vertical-align: middle !important;
+        }
 
-.col-fit {
-    width: 1%;
-    white-space: nowrap;
-}
+        .col-fit {
+            width: 1%;
+            white-space: nowrap;
+        }
 
         .qr-container { 
             display: flex; 
@@ -1110,55 +1108,53 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
             </div>
             
             <div class="table-responsive">
-    <div class="table-responsive">
-    <table class="table align-middle table-excel-mode table-reportes">
-        <thead>
-            <tr>
-                <th class="text-center col-fit">ID</th>
-                <th class="text-center" style="width: 15%;">Hostname</th> 
-                <th class="text-center" style="width: 12%;">Marca</th> 
-                <th class="text-center" style="width: 18%;">Modelo</th>
-                <th class="text-center" style="width: 18%;">Número de Serie (S/N)</th>
-                <th class="text-center col-fit">AD</th>
-                <th class="text-center col-fit">Azure</th>
-                <th style="width: 25%;">Usuario Asignado</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php
-            if (!empty($reportes)) {
-                foreach($reportes as $row) {
-                    $row_upper = array_change_key_case($row, CASE_UPPER);
-                    $sn = isset($row_upper['S/N']) ? $row_upper['S/N'] : (isset($row_upper['SERIE']) ? $row_upper['SERIE'] : 'N/A');
-                    $ad = isset($row_upper['ACTIVE DIRECTORY']) ? strtoupper(trim($row_upper['ACTIVE DIRECTORY'])) : '';
-                    $azure = isset($row_upper['CLIENTE AZURE']) ? strtoupper(trim($row_upper['CLIENTE AZURE'])) : '';
-                    
-                    echo "<tr>";
-                    echo "<td class='text-center text-muted fw-bold'>" . $row['id'] . "</td>";
-                    echo "<td class='text-center'><span class='badge badge-kudy-success font-monospace'>" . htmlspecialchars($row_upper['HOSTNAME'] ?? 'N/A') . "</span></td>";
-                    echo "<td class='text-center fw-bold'>" . htmlspecialchars($row_upper['MARCA'] ?? 'N/A') . "</td>";
-                    echo "<td class='text-center'>" . htmlspecialchars($row_upper['MODELO'] ?? 'N/A') . "</td>";
-                    echo "<td class='text-center'><span class='badge bg-light text-dark border p-2 font-monospace' style='border-radius:10px;'>" . htmlspecialchars(trim($sn)) . "</span></td>";
-                    
-                    echo "<td class='text-center'>";
-                    echo ($ad == 'SI') ? '<span class="badge badge-kudy-success">SI</span>' : '<span class="badge badge-kudy-danger">NO</span>';
-                    echo "</td>";
+                <table class="table align-middle table-excel-mode table-reportes">
+                    <thead>
+                        <tr>
+                            <th class="text-center col-fit">ID</th>
+                            <th class="text-center" style="width: 15%;">Hostname</th> 
+                            <th class="text-center" style="width: 12%;">Marca</th> 
+                            <th class="text-center" style="width: 18%;">Modelo</th>
+                            <th class="text-center" style="width: 18%;">Número de Serie (S/N)</th>
+                            <th class="text-center col-fit">AD</th>
+                            <th class="text-center col-fit">Azure</th>
+                            <th style="width: 25%;">Usuario Asignado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        if (!empty($reportes)) {
+                            foreach($reportes as $row) {
+                                $row_upper = array_change_key_case($row, CASE_UPPER);
+                                $sn = isset($row_upper['S/N']) ? $row_upper['S/N'] : (isset($row_upper['SERIE']) ? $row_upper['SERIE'] : 'N/A');
+                                $ad = isset($row_upper['ACTIVE DIRECTORY']) ? strtoupper(trim($row_upper['ACTIVE DIRECTORY'])) : '';
+                                $azure = isset($row_upper['CLIENTE AZURE']) ? strtoupper(trim($row_upper['CLIENTE AZURE'])) : '';
+                                
+                                echo "<tr>";
+                                echo "<td class='text-center text-muted fw-bold'>" . $row['id'] . "</td>";
+                                echo "<td class='text-center'><span class='badge badge-kudy-success font-monospace'>" . htmlspecialchars($row_upper['HOSTNAME'] ?? 'N/A') . "</span></td>";
+                                echo "<td class='text-center fw-bold'>" . htmlspecialchars($row_upper['MARCA'] ?? 'N/A') . "</td>";
+                                echo "<td class='text-center'>" . htmlspecialchars($row_upper['MODELO'] ?? 'N/A') . "</td>";
+                                echo "<td class='text-center'><span class='badge bg-light text-dark border p-2 font-monospace' style='border-radius:10px;'>" . htmlspecialchars(trim($sn)) . "</span></td>";
+                                
+                                echo "<td class='text-center'>";
+                                echo ($ad == 'SI') ? '<span class="badge badge-kudy-success">SI</span>' : '<span class="badge badge-kudy-danger">NO</span>';
+                                echo "</td>";
 
-                    echo "<td class='text-center'>";
-                    echo ($azure == 'SI') ? '<span class="badge badge-kudy-success">SI</span>' : '<span class="badge badge-kudy-danger">NO</span>';
-                    echo "</td>";
+                                echo "<td class='text-center'>";
+                                echo ($azure == 'SI') ? '<span class="badge badge-kudy-success">SI</span>' : '<span class="badge badge-kudy-danger">NO</span>';
+                                echo "</td>";
 
-                    echo "<td><strong>" . htmlspecialchars($row_upper['USUARIO ACTUAL'] ?? 'N/A') . "</strong></td>";
-                    echo "</tr>";
-                }
-            } else {
-                echo "<tr><td colspan='8' class='text-center py-4 text-muted fs-6'><i class='bi bi-exclamation-circle-fill text-warning me-2'></i> No se localizaron registros bajo los criterios elegidos.</td></tr>";
-            }
-            ?>
-        </tbody>
-    </table>
-</div>
-</div>
+                                echo "<td><strong>" . htmlspecialchars($row_upper['USUARIO ACTUAL'] ?? 'N/A') . "</strong></td>";
+                                echo "</tr>";
+                            }
+                        } else {
+                            echo "<tr><td colspan='8' class='text-center py-4 text-muted fs-6'><i class='bi bi-exclamation-circle-fill text-warning me-2'></i> No se localizaron registros bajo los criterios elegidos.</td></tr>";
+                        }
+                        ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     <?php } ?>
 
@@ -1246,14 +1242,21 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                         <option value="NO" selected>NO</option>
                     </select>
                 </div>
+
+                <!-- SELECTORES DINÁMICOS DE PAÍS Y CIUDAD -->
                 <div class="col-md-4 mb-3">
-                    <label class="form-label mb-1 small fw-bold text-muted">País</label>
-                    <input type="text" name="pais" class="form-control" placeholder="Ej: México">
+                    <label for="select-pais" class="form-label mb-1 small fw-bold text-muted">País:</label>
+                    <select id="select-pais" name="PAIS" class="form-control" required>
+                        <option value="">Selecciona un País</option>
+                    </select>
                 </div>
                 <div class="col-md-4 mb-3">
-                    <label class="form-label mb-1 small fw-bold text-muted">Ciudad</label>
-                    <input type="text" name="ciudad" class="form-control" placeholder="Ej: Monterrey">
+                    <label for="select-ciudad" class="form-label mb-1 small fw-bold text-muted">Ciudad:</label>
+                    <select id="select-ciudad" name="CIUDAD" class="form-control" required>
+                        <option value="">Selecciona una Ciudad</option>
+                    </select>
                 </div>
+
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Asignación VP</label>
                     <input type="text" name="asignacion_vp" class="form-control" placeholder="Ej: Dirección">
@@ -1371,14 +1374,21 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                         <option value="NO">NO</option>
                     </select>
                 </div>
+
+                <!-- SELECTORES DINÁMICOS EDITAR -->
                 <div class="col-md-4 mb-3">
-                    <label class="form-label mb-1 small fw-bold text-muted">País</label>
-                    <input type="text" name="pais" id="edit_pais" class="form-control">
+                    <label for="edit_pais" class="form-label mb-1 small fw-bold text-muted">País:</label>
+                    <select id="edit_pais" name="PAIS" class="form-control" required>
+                        <option value="">Selecciona un País</option>
+                    </select>
                 </div>
                 <div class="col-md-4 mb-3">
-                    <label class="form-label mb-1 small fw-bold text-muted">Ciudad</label>
-                    <input type="text" name="ciudad" id="edit_ciudad" class="form-control">
+                    <label for="edit_ciudad" class="form-label mb-1 small fw-bold text-muted">Ciudad:</label>
+                    <select id="edit_ciudad" name="CIUDAD" class="form-control" required>
+                        <option value="">Selecciona una Ciudad</option>
+                    </select>
                 </div>
+
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Asignación VP</label>
                     <input type="text" name="asignacion_vp" id="edit_asignacion_vp" class="form-control">
@@ -1555,6 +1565,9 @@ function confirmarEliminar(id, hostname) {
     }
 }
 </script>
+
+<!-- API DE UBICACIONES Y EVENTOS DINÁMICOS -->
+<script src="api_ubicaciones.js"></script>
 
 </body>
 </html>

@@ -1,55 +1,46 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const selectPais = document.getElementById('select_pais');
-    const selectCiudad = document.getElementById('select_ciudad');
+document.addEventListener("DOMContentLoaded", () => {
+    const selectPais = document.getElementById("select-pais");
+    const selectCiudad = document.getElementById("select-ciudad");
 
-    if (!selectPais || !selectCiudad) return;
-
-    // 1. Cargar lista global de países
-    fetch('https://countriesnow.space/api/v0.1/countries/positions')
-        .then(response => response.json())
+    // 1. Cargar Países desde API gratuita
+    fetch("https://restcountries.com/v3.1/all?fields=name,cca2")
+        .then(res => res.json())
         .then(data => {
-            if (!data.error) {
-                selectPais.innerHTML = '<option value="">-- Seleccionar País --</option>';
-                data.data.forEach(item => {
-                    const opt = document.createElement('option');
-                    opt.value = item.name;
-                    opt.textContent = item.name;
-                    selectPais.appendChild(opt);
-                });
-            }
-        })
-        .catch(err => console.error("Error cargando países:", err));
+            data.sort((a, b) => a.name.common.localeCompare(b.name.common));
+            data.forEach(pais => {
+                const opt = document.createElement("option");
+                opt.value = pais.name.common; // Se guarda el nombre del país directamente
+                opt.dataset.code = pais.cca2;
+                opt.textContent = pais.name.common;
+                selectPais.appendChild(opt);
+            });
+        });
 
-    // 2. Cargar ciudades según el país seleccionado
-    selectPais.addEventListener('change', function () {
-        const pais = this.value;
+    // 2. Cargar Ciudades según el país elegido
+    selectPais.addEventListener("change", (e) => {
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        const countryCode = selectedOption.dataset.code;
+
         selectCiudad.innerHTML = '<option value="">Cargando ciudades...</option>';
 
-        if (!pais) {
-            selectCiudad.innerHTML = '<option value="">-- Seleccionar Ciudad --</option>';
-            return;
-        }
+        if (!countryCode) return;
 
-        fetch('https://countriesnow.space/api/v0.1/countries/cities', {
+        fetch(`https://countriesnow.space/api/v0.1/countries/cities`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ country: pais })
+            body: JSON.stringify({ country: selectedOption.value })
         })
-            .then(response => response.json())
-            .then(data => {
-                selectCiudad.innerHTML = '<option value="">-- Seleccionar Ciudad --</option>';
-                if (!data.error && data.data) {
-                    data.data.forEach(ciudad => {
-                        const opt = document.createElement('option');
-                        opt.value = ciudad;
-                        opt.textContent = ciudad;
-                        selectCiudad.appendChild(opt);
-                    });
-                }
-            })
-            .catch(err => {
-                console.error("Error cargando ciudades:", err);
-                selectCiudad.innerHTML = '<option value="">Sin datos disponibles</option>';
-            });
+        .then(res => res.json())
+        .then(data => {
+            selectCiudad.innerHTML = '<option value="">Selecciona una Ciudad</option>';
+            if (data.data) {
+                data.data.sort().forEach(ciudad => {
+                    const opt = document.createElement("option");
+                    opt.value = ciudad;
+                    opt.textContent = ciudad;
+                    selectCiudad.appendChild(opt);
+                });
+            }
+        });
     });
 });
