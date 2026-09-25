@@ -1,6 +1,8 @@
 <?php
 session_start();
 
+$hash_superadmin = '$2y$10$w8/0/S/a.qQ8vE1J4zJ1u.N5PzGvF8C0G9hJ5z4H3G2F1E0D9C8B7';
+
 // Si el usuario ya inició sesión, redirigir al inventario
 if (isset($_SESSION['usuario'])) {
     header("Location: inicio.php");

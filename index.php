@@ -1345,7 +1345,7 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Procesador</label>
-                    <input type="text" name="procesador" id="edit_procesador" class="form-control">
+<input type="text" name="PROCESADOR" maxlength="255">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">RAM</label>
@@ -1425,7 +1425,7 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones Adicionales (OBSERVACIONES2)</label>
-                    <textarea name="observaciones2" id="edit_observaciones2" class="form-control" rows="1"></textarea>
+<textarea name="OBSERVACIONES2" maxlength="1000"></textarea>
                 </div>
             </div>
 
