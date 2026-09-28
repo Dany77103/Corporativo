@@ -1,11 +1,13 @@
 <?php
 session_start();
 
-$hash_superadmin = '$2y$10$w8/0/S/a.qQ8vE1J4zJ1u.N5PzGvF8C0G9hJ5z4H3G2F1E0D9C8B7';
-
-// Si el usuario ya inició sesión, redirigir al inventario
-if (isset($_SESSION['usuario'])) {
-    header("Location: inicio.php");
+// Si ya inició sesión, redirigir
+if (isset($_SESSION['usuario']) && isset($_SESSION['rol'])) {
+    if ($_SESSION['rol'] === 'superadmin') {
+        header("Location: superadmin_panel.php");
+    } else {
+        header("Location: inicio.php");
+    }
     exit();
 }
 
@@ -31,15 +33,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($result && $result->num_rows > 0) {
             $row = $result->fetch_assoc();
             
-            // Verifica contraseñas encriptadas (password_verify) o en texto plano
-            if (password_verify($password_input, $row['password']) || $password_input === $row['password']) {
+            // Validación flexible: Compara contra hash, o texto plano, o la contraseña directa SuperAdmin2026
+            $es_superadmin_directo = ($username === 'superadmin' && $password_input === 'SuperAdmin2026');
+            $es_password_valida    = password_verify($password_input, $row['password']) || ($password_input === $row['password']);
+
+            if ($es_superadmin_directo || $es_password_valida) {
                 
-                // Guardar datos en la sesión para cualquier rol
+                // Guardar datos en la sesión
                 $_SESSION['usuario'] = $row['usuario'];
                 $_SESSION['nombre']  = $row['nombre'];
                 $_SESSION['rol']     = $row['rol']; 
                 
-                header("Location: index.php");
+                // Si entró por login de superadmin, asegurar su rol
+                if ($username === 'superadmin') {
+                    $_SESSION['rol'] = 'superadmin';
+                    header("Location: superadmin_panel.php");
+                } else if ($row['rol'] === 'superadmin') {
+                    header("Location: superadmin_panel.php");
+                } else {
+                    header("Location: index.php");
+                }
                 exit();
 
             } else {
@@ -58,9 +71,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GSB - Control de Acceso</title>
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
         :root {
@@ -89,7 +100,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             overflow-x: hidden;
         }
 
-        /* Contenedor Adaptable */
         .login-card {
             background: var(--card-bg);
             border-radius: 24px;
@@ -148,37 +158,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             padding-left: 15px;
             color: var(--text-muted);
         }
-
-        /* ==========================================
-           RESPONSIVE BREAKPOINTS (Móviles y Tablets)
-           ========================================== */
-
-        @media (max-width: 575.98px) {
-            body {
-                padding: 10px;
-            }
-
-            .login-card {
-                padding: 1.75rem 1.25rem !important;
-                border-radius: 18px !important;
-                width: 95%;
-            }
-
-            .green-icon-badge {
-                width: 48px;
-                height: 48px;
-                font-size: 22px;
-            }
-
-            h3 { 
-                font-size: 1.35rem !important; 
-            }
-
-            .btn-green {
-                padding: 10px 18px;
-                font-size: 0.95rem;
-            }
-        }
     </style>
 </head>
 <body>
@@ -224,7 +203,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 </div>
 
-<!-- Bootstrap 5 JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

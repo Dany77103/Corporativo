@@ -11,7 +11,7 @@ if (!isset($_SESSION['usuario']) || !tienePermiso('ver')) {
 }
 
 // ==========================================
-// 2. CONEXIÓN A LA BASE DE DATOS (PDO)
+// CONEXIÓN A LA BASE DE DATOS (PDO)
 // ==========================================
 $host     = "localhost";      
 $user     = "root";           
@@ -1246,13 +1246,13 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 <!-- SELECTORES DINÁMICOS DE PAÍS Y CIUDAD -->
                 <div class="col-md-4 mb-3">
                     <label for="select-pais" class="form-label mb-1 small fw-bold text-muted">País:</label>
-                    <select id="select-pais" name="PAIS" class="form-control" required>
+                    <select id="select-pais" name="PAIS" class="form-select" required>
                         <option value="">Selecciona un País</option>
                     </select>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label for="select-ciudad" class="form-label mb-1 small fw-bold text-muted">Ciudad:</label>
-                    <select id="select-ciudad" name="CIUDAD" class="form-control" required>
+                    <select id="select-ciudad" name="CIUDAD" class="form-select" required>
                         <option value="">Selecciona una Ciudad</option>
                     </select>
                 </div>
@@ -1289,11 +1289,11 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones</label>
-                    <textarea name="observaciones" class="form-control" rows="1" placeholder="Ej: Detalles físicos del equipo..."></textarea>
+                    <textarea name="observaciones" class="form-control" rows="2" placeholder="Ej: Detalles físicos del equipo..."></textarea>
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones Adicionales (OBSERVACIONES2)</label>
-                    <textarea name="observaciones2" class="form-control" rows="1" placeholder="Ej: Comentarios extras..."></textarea>
+                    <textarea name="observaciones2" class="form-control" rows="2" placeholder="Ej: Comentarios extras..."></textarea>
                 </div>
             </div>
 
@@ -1345,7 +1345,7 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Procesador</label>
-<input type="text" name="PROCESADOR" maxlength="255">
+                    <input type="text" name="procesador" id="edit_procesador" class="form-control">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">RAM</label>
@@ -1378,13 +1378,13 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 <!-- SELECTORES DINÁMICOS EDITAR -->
                 <div class="col-md-4 mb-3">
                     <label for="edit_pais" class="form-label mb-1 small fw-bold text-muted">País:</label>
-                    <select id="edit_pais" name="PAIS" class="form-control" required>
+                    <select id="edit_pais" name="PAIS" class="form-select" required>
                         <option value="">Selecciona un País</option>
                     </select>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label for="edit_ciudad" class="form-label mb-1 small fw-bold text-muted">Ciudad:</label>
-                    <select id="edit_ciudad" name="CIUDAD" class="form-control" required>
+                    <select id="edit_ciudad" name="CIUDAD" class="form-select" required>
                         <option value="">Selecciona una Ciudad</option>
                     </select>
                 </div>
@@ -1421,11 +1421,11 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones</label>
-                    <textarea name="observaciones" id="edit_observaciones" class="form-control" rows="1"></textarea>
+                    <textarea name="observaciones" id="edit_observaciones" class="form-control" rows="2"></textarea>
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones Adicionales (OBSERVACIONES2)</label>
-<textarea name="OBSERVACIONES2" maxlength="1000"></textarea>
+                    <textarea name="observaciones2" id="edit_observaciones2" class="form-control" rows="2"></textarea>
                 </div>
             </div>
 
