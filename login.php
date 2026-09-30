@@ -1,12 +1,14 @@
 <?php
 session_start();
 
-// Si ya inició sesión, redirigir
+// 1. Si ya inició sesión, redirigir según el rol
 if (isset($_SESSION['usuario']) && isset($_SESSION['rol'])) {
-    if ($_SESSION['rol'] === 'superadmin') {
+    $rol = strtolower(trim($_SESSION['rol']));
+    
+    if ($rol === 'superadmin') {
         header("Location: superadmin_panel.php");
     } else {
-        header("Location: inicio.php");
+        header("Location: inicio.php"); // Admin y usuarios estándar van a inicio.php
     }
     exit();
 }
@@ -24,8 +26,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if ($conn->connect_error) {
         $error_message = "Error de conexión con el servidor.";
     } else {
-        $username = $conn->real_escape_string($_POST['usuario']);
-        $password_input = $_POST['password'];
+        $username       = $conn->real_escape_string(trim($_POST['usuario']));
+        $password_input = trim($_POST['password']);
 
         $sql = "SELECT * FROM usuarios WHERE usuario = '$username' LIMIT 1";
         $result = $conn->query($sql);
@@ -33,27 +35,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($result && $result->num_rows > 0) {
             $row = $result->fetch_assoc();
             
-            // Validación flexible: Compara contra hash, o texto plano, o la contraseña directa SuperAdmin2026
+            $rol_db      = strtolower(trim($row['rol']));
+            $password_db = trim($row['password']);
+
+            // Validación de contraseña (compara hash o texto plano)
             $es_superadmin_directo = ($username === 'superadmin' && $password_input === 'SuperAdmin2026');
-            $es_password_valida    = password_verify($password_input, $row['password']) || ($password_input === $row['password']);
+            $es_password_valida    = password_verify($password_input, $password_db) || ($password_input === $password_db);
 
             if ($es_superadmin_directo || $es_password_valida) {
                 
                 // Guardar datos en la sesión
                 $_SESSION['usuario'] = $row['usuario'];
                 $_SESSION['nombre']  = $row['nombre'];
-                $_SESSION['rol']     = $row['rol']; 
+                $_SESSION['rol']     = $rol_db; 
                 
-                // Si entró por login de superadmin, asegurar su rol
-                if ($username === 'superadmin') {
-                    $_SESSION['rol'] = 'superadmin';
-                    header("Location: superadmin_panel.php");
-                } else if ($row['rol'] === 'superadmin') {
-                    header("Location: superadmin_panel.php");
-                } else {
-                    header("Location: index.php");
-                }
-                exit();
+                // 2. Redirección al iniciar sesión
+                if ($username === 'superadmin' || $rol_db === 'superadmin') {
+    $_SESSION['rol'] = 'superadmin';
+    header("Location: superadmin_panel.php");
+} elseif ($rol_db === 'soporte' || $rol_db === 'admin') {
+    $_SESSION['rol'] = $rol_db;
+    header("Location: inicio.php");
+} else {
+    header("Location: inicio.php");
+}
+exit();
 
             } else {
                 $error_message = "Contraseña incorrecta. Inténtelo de nuevo.";

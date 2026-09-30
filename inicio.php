@@ -1,7 +1,10 @@
 <?php
 session_start();
 
-if (!isset($_SESSION['usuario']) || $_SESSION['rol'] !== 'admin') {
+// Validar que exista sesión y que el rol sea 'admin' o 'soporte'
+$roles_permitidos = ['admin', 'soporte', 'superadmin'];
+
+if (!isset($_SESSION['usuario']) || !in_array(strtolower($_SESSION['rol'] ?? ''), $roles_permitidos)) {
     session_unset();
     session_destroy();
     header("Location: login.php");
@@ -23,13 +26,17 @@ if (!$conn->connect_error) {
         $total_equipos = $res->fetch_assoc()['total'];
     }
 }
+
+// Variables de sesión para la interfaz
+$usuario_actual = $_SESSION['nombre'] ?? $_SESSION['usuario'] ?? 'Usuario';
+$rol_actual     = ucfirst(strtolower($_SESSION['rol'] ?? 'usuario'));
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GSB - Inicio Corporativo</title>
+    <title>GSB - Panel Inicial</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
@@ -159,7 +166,7 @@ if (!$conn->connect_error) {
             font-weight: bold;
         }
 
-        /* ESTILOS PERSONALIZADOS DEL ESCÁNER QR */
+        /* ESTILOS ESCÁNER QR */
         .qr-scanner-wrapper {
             border: 1px solid rgba(0, 0, 0, 0.08);
         }
@@ -203,18 +210,10 @@ if (!$conn->connect_error) {
             100% { top: 0%; }
         }
 
-        /* RESPONSIVE BREAKPOINTS */
         @media (max-width: 991.98px) {
-            body {
-                padding: 10px 5px !important;
-            }
-            .app-container {
-                border-radius: 16px !important;
-                padding: 16px !important;
-            }
-            .chart-container {
-                height: 250px !important;
-            }
+            body { padding: 10px 5px !important; }
+            .app-container { border-radius: 16px !important; padding: 16px !important; }
+            .chart-container { height: 250px !important; }
         }
 
         @media (max-width: 575.98px) {
@@ -227,15 +226,9 @@ if (!$conn->connect_error) {
                 gap: 8px;
                 width: 100%;
             }
-            .btn-responsive-group .btn {
-                width: 100%;
-            }
-            .modal-dialog {
-                margin: 0.5rem;
-            }
-            .modal-body {
-                padding: 1rem !important;
-            }
+            .btn-responsive-group .btn { width: 100%; }
+            .modal-dialog { margin: 0.5rem; }
+            .modal-body { padding: 1rem !important; }
         }
     </style>
 </head>
@@ -243,6 +236,7 @@ if (!$conn->connect_error) {
 
 <div class="container app-container">
 
+    <!-- NAVBAR -->
     <nav class="navbar navbar-expand navbar-light navbar-minimal p-0">
         <div class="container-fluid p-0">
             <div class="d-flex align-items-center gap-3">
@@ -254,8 +248,7 @@ if (!$conn->connect_error) {
             <div class="d-flex align-items-center gap-2">
                 <div class="user-pill">
                     <i class="bi bi-person-fill text-secondary"></i>
-                    <span class="small fw-semibold">Admin</span>
-                    <i class="bi bi-chevron-down small text-muted"></i>
+                    <span class="small fw-semibold"><?php echo htmlspecialchars($usuario_actual); ?> (<?php echo htmlspecialchars($rol_actual); ?>)</span>
                 </div>
                 <a href="logout.php" class="icon-btn text-danger text-decoration-none" title="Cerrar Sesión">
                     <i class="bi bi-box-arrow-right"></i>
@@ -269,6 +262,7 @@ if (!$conn->connect_error) {
         <h4 class="fw-bold m-0" style="color: var(--brand-dark);">Sistemas Globales de Control</h4>
     </div>
 
+    <!-- TARJETA INFORMATIVA -->
     <div class="card-custom">
         <div class="row align-items-center">
             <div class="col-md-7 border-end-md pe-md-4">
@@ -309,13 +303,14 @@ if (!$conn->connect_error) {
                 </div>
                 <hr class="my-2">
                 <div class="d-flex justify-content-between align-items-center mt-3">
-                    <span class="text-muted small">Plataforma Oficial 2026</span>
+                    <span class="text-muted small">Plataforma Oficial <?php echo date("Y"); ?></span>
                     <i class="bi bi-arrow-right" style="color: var(--brand-green);"></i>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- GRÁFICA -->
     <div class="card-custom">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div class="d-flex align-items-center gap-2">
@@ -333,6 +328,7 @@ if (!$conn->connect_error) {
         </div>
     </div>
 
+    <!-- TARJETAS DE CARACTERÍSTICAS -->
     <div class="row g-3 mt-1">
         <div class="col-md-4">
             <div class="card-custom h-100 p-3">
@@ -369,7 +365,7 @@ if (!$conn->connect_error) {
 
 </div>
 
-<!-- Modal Escáner QR Re-diseñado -->
+<!-- MODAL ESCÁNER QR -->
 <div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -460,7 +456,7 @@ new Chart(ctx, {
     }
 });
 
-// Lógica de Escáner QR Personalizada
+// Lógica de Escáner QR
 let html5QrCode = null;
 const qrModal = document.getElementById('qrModal');
 
