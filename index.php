@@ -1510,8 +1510,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('edit_mac').value = this.dataset.mac || '';
             document.getElementById('edit_observaciones').value = this.dataset.observaciones || '';
             document.getElementById('edit_asignacion_gsb').value = this.dataset.asignacion_gsb || 'NO';
-            document.getElementById('edit_pais').value = this.dataset.pais || '';
-            document.getElementById('edit_ciudad').value = this.dataset.ciudad || '';
             document.getElementById('edit_asignacion_vp').value = this.dataset.asignacion_vp || '';
             document.getElementById('edit_act_directory').value = this.dataset.act_directory || 'NO';
             document.getElementById('edit_mfa').value = this.dataset.mfa || '';
@@ -1519,6 +1517,23 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('edit_observaciones2').value = this.dataset.observaciones2 || '';
             document.getElementById('edit_cargador').value = this.dataset.cargador || '';
             document.getElementById('edit_cliente_azure').value = this.dataset.cliente_azure || 'NO';
+
+            const paisGuardado = this.dataset.pais || '';
+            const ciudadGuardada = this.dataset.ciudad || '';
+
+            // Disparar evento personalizado si api_ubicaciones.js lo escucha para precargar
+            const editPaisSelect = document.getElementById('edit_pais');
+            if (editPaisSelect) {
+                editPaisSelect.value = paisGuardado;
+                editPaisSelect.dispatchEvent(new Event('change'));
+
+                setTimeout(() => {
+                    const editCiudadSelect = document.getElementById('edit_ciudad');
+                    if (editCiudadSelect) {
+                        editCiudadSelect.value = ciudadGuardada;
+                    }
+                }, 200);
+            }
 
             const modalEditar = new bootstrap.Modal(document.getElementById('modalEditar'));
             modalEditar.show();

@@ -1,5 +1,7 @@
 <?php
-// Roles del sistema
+// ==========================================
+// DEFINICIÓN DE ROLES DEL SISTEMA
+// ==========================================
 define('ROL_SUPERADMIN', 'superadmin');
 define('ROL_ADMIN',      'admin');
 define('ROL_SOPORTE',    'soporte');
@@ -10,11 +12,14 @@ define('ROL_LECTOR',     'lector');
  * - ver: Consultar registros y reportes.
  * - editar: Modificar datos de equipos.
  * - borrar: Eliminar registros.
- * - crear_equipos: Dar de alta activos.
+ * - crear_equipos: Dar de alta activos (Manual o Excel).
  * - crear_usuarios: Crear cuentas de nivel admin/soporte/lector.
- * - gestionar_admins: Crear o modificar usuarios con rol Superadmin/Admin.
+ * - gestionar_admins: Crear o modificar usuarios con rol Superadmin.
  */
 function obtenerPermisosPorRol($rol) {
+    // Normalizar la cadena del rol a minúsculas para evitar discordancias
+    $rol = strtolower(trim($rol));
+
     $permisos = [
         ROL_SUPERADMIN => [
             'ver'              => true,
@@ -61,18 +66,20 @@ function obtenerPermisosPorRol($rol) {
 }
 
 /**
- * Función para verificar si el usuario logueado tiene un permiso específico.
+ * Verifica si el usuario autenticado en la sesión tiene un permiso específico.
  */
 function tienePermiso($permisoRequerido) {
-    if (!isset($_SESSION['rol'])) {
+    if (!isset($_SESSION['rol']) || empty($_SESSION['rol'])) {
         return false;
     }
+
     $permisos = obtenerPermisosPorRol($_SESSION['rol']);
+    
     return isset($permisos[$permisoRequerido]) && $permisos[$permisoRequerido] === true;
 }
 
 /**
- * Redirecciona si el usuario no cuenta con la autorización requerida.
+ * Redirecciona al usuario si no cuenta con la autorización requerida.
  */
 function requerirPermiso($permisoRequerido) {
     if (!tienePermiso($permisoRequerido)) {

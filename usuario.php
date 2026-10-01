@@ -2,7 +2,7 @@
 session_start();
 require_once 'config_roles.php';
 
-// Verificar login y acceso al módulo
+// 1. Verificar autenticación
 if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
@@ -10,7 +10,7 @@ if (!isset($_SESSION['usuario'])) {
 
 requerirPermiso('crear_usuarios');
 
-// Conexión a BD
+// 2. Conexión a Base de Datos
 $host     = "localhost";
 $user     = "root";
 $password = "";
@@ -22,57 +22,81 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 } catch (PDOException $e) {
-    die("Error de conexión: " . $e->getMessage());
+    die("Error de conexión a la base de datos: " . $e->getMessage());
 }
 
 $mensaje = "";
 $error   = "";
 
-// Lógica para Crear Usuario
+// 3. Lógica para Crear Usuario
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_crear_usuario'])) {
     $nombre  = trim($_POST['nombre'] ?? '');
     $usuario = trim($_POST['usuario'] ?? '');
     $pass    = trim($_POST['password'] ?? '');
-    $rol     = trim($_POST['rol'] ?? 'lector');
+    $rol_id  = intval($_POST['rol_id'] ?? 4); // Por defecto rol 4 ('solo_ver')
 
-    if (empty($_POST['usuario']) || empty($_POST['password']) || empty($_POST['nombre'])) {
-    die("Error: Ningún campo puede quedar vacío.");
-
+    // Validar NOT NULL en servidor sin romper la página
+    if (empty($nombre) || empty($usuario) || empty($pass)) {
+        $error = "Todos los campos (Nombre, Usuario y Contraseña) son obligatorios.";
     } else {
-        // Validar si el usuario actual puede asignar el rol solicitado
-        if (($rol === ROL_SUPERADMIN || $rol === ROL_ADMIN) && !tienePermiso('gestionar_admins')) {
-            $error = "No tienes privilegios para asignar roles de Administrador o Superadmin.";
+        // Mapear ID de rol para verificación de permisos de asignación
+        // 1 = superadmin, 2 = admin, 3 = soporte, 4 = solo_ver
+        if (($rol_id === 1 || $rol_id === 2) && !tienePermiso('gestionar_admins')) {
+            $error = "No tienes privilegios para asignar roles de Administrador o Superusuario.";
         } else {
             $passHash = password_hash($pass, PASSWORD_BCRYPT);
-            $stmt     = $pdo->prepare("INSERT INTO usuarios (nombre, usuario, password, rol) VALUES (:nombre, :usuario, :pass, :rol)");
+            
             try {
+                $stmt = $pdo->prepare("INSERT INTO usuarios (nombre, usuario, password, rol_id) VALUES (:nombre, :usuario, :pass, :rol_id)");
                 $stmt->execute([
                     ':nombre'  => $nombre,
                     ':usuario' => $usuario,
                     ':pass'    => $passHash,
-                    ':rol'     => $rol
+                    ':rol_id'  => $rol_id
                 ]);
                 $mensaje = "Usuario creado exitosamente.";
             } catch (PDOException $e) {
-                $error = "El nombre de usuario ya se encuentra registrado.";
+                if ($e->getCode() == 23000) {
+                    $error = "El nombre de usuario ya se encuentra registrado.";
+                } else {
+                    $error = "Error al registrar el usuario: " . $e->getMessage();
+                }
             }
         }
     }
 }
 
-// Lógica para Eliminar Usuario
+// 4. Lógica para Eliminar Usuario
 if (isset($_GET['eliminar'])) {
     $id_eliminar = intval($_GET['eliminar']);
+    
     if (!tienePermiso('gestionar_admins')) {
         $error = "No tienes permiso para eliminar usuarios.";
     } else {
-        $stmt = $pdo->prepare("DELETE FROM usuarios WHERE id = :id AND rol != 'superadmin'");
-        $stmt->execute([':id' => $id_eliminar]);
-        $mensaje = "Usuario eliminado correctamente.";
+        try {
+            // Prevenir eliminar superadmins directamente desde aquí
+            $stmt = $pdo->prepare("DELETE FROM usuarios WHERE id = :id AND rol_id != 1");
+            $stmt->execute([':id' => $id_eliminar]);
+
+            if ($stmt->rowCount() > 0) {
+                $mensaje = "Usuario eliminado correctamente.";
+            } else {
+                $error = "No se pudo eliminar el usuario seleccionado o es un Superusuario.";
+            }
+        } catch (PDOException $e) {
+            $error = "Error al intentar eliminar el usuario.";
+        }
     }
 }
 
-$usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuarios ORDER BY id DESC")->fetchAll();
+// 5. Consultar usuarios uniendo con la tabla roles
+$stmtUsuarios = $pdo->query("
+    SELECT u.id, u.nombre, u.usuario, r.nombre AS rol_nombre, r.id AS rol_id
+    FROM usuarios u
+    INNER JOIN roles r ON u.rol_id = r.id
+    ORDER BY u.id DESC
+");
+$usuarios = $stmtUsuarios->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -91,31 +115,33 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
         }
         body { 
             background-color: var(--brand-bg); 
-            font-family: 'Segoe UI', sans-serif; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             padding: 20px; 
         }
         .card-custom { 
-            border-radius: 20px; 
+            border-radius: 16px; 
             border: 1px solid var(--brand-border); 
-            background: white; 
-            padding: 20px; 
+            background: #ffffff; 
+            padding: 24px; 
         }
         .btn-gsb { 
             background-color: var(--brand-primary); 
-            color: white; 
+            color: #ffffff; 
             border-radius: 50px; 
+            transition: all 0.3s ease;
         }
         .btn-gsb:hover { 
             background-color: var(--brand-dark); 
-            color: white; 
+            color: #ffffff; 
         }
     </style>
 </head>
 <body>
 
-<div class="container max-width-1000">
+<div class="container my-4" style="max-width: 1100px;">
+    <!-- Encabezado -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold" style="color: var(--brand-primary);">
+        <h3 class="fw-bold m-0" style="color: var(--brand-primary);">
             <i class="bi bi-people-fill me-2"></i>Administración de Usuarios
         </h3>
         <a href="index.php" class="btn btn-outline-secondary rounded-pill">
@@ -123,21 +149,24 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
         </a>
     </div>
 
+    <!-- Mensajes Feedback -->
     <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success border-0 shadow-sm mb-3">
-            <?php echo htmlspecialchars($mensaje); ?>
+        <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i><?php echo htmlspecialchars($mensaje); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     <?php endif; ?>
 
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger border-0 shadow-sm mb-3">
-            <?php echo htmlspecialchars($error); ?>
+        <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i><?php echo htmlspecialchars($error); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     <?php endif; ?>
 
-    <div class="row">
+    <div class="row g-4">
         <!-- Formulario Registro -->
-        <div class="col-md-4 mb-4">
+        <div class="col-lg-4">
             <div class="card card-custom shadow-sm">
                 <h6 class="fw-bold mb-3" style="color: var(--brand-primary);">
                     <i class="bi bi-person-plus-fill me-1"></i> Nuevo Usuario
@@ -147,46 +176,46 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
                     
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Nombre Completo</label>
-                        <input type="text" name="nombre" class="form-control" required>
+                        <input type="text" name="nombre" class="form-control" placeholder="Ej. Juan Pérez" required maxlength="150">
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Usuario</label>
-                        <input type="text" name="usuario" class="form-control" required>
+                        <input type="text" name="usuario" class="form-control" placeholder="Ej. jperez" required maxlength="100">
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Contraseña</label>
-                        <input type="password" name="password" class="form-control" required>
+                        <input type="password" name="password" class="form-control" placeholder="••••••••" required>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Rol</label>
-                        <select name="rol" class="form-select" required>
-                            <option value="lector">Solo Ver (Lector)</option>
-                            <option value="soporte">Soporte</option>
-                            <option value="admin">Administrador</option>
+                        <select name="rol_id" class="form-select" required>
+                            <option value="4">Solo Ver (Lector)</option>
+                            <option value="3">Soporte (Ver, Editar, Eliminar)</option>
+                            <option value="2">Administrador</option>
                             <?php if (tienePermiso('gestionar_admins')): ?>
-                                <option value="superadmin">Superusuario</option>
+                                <option value="1">Superusuario</option>
                             <?php endif; ?>
                         </select>
                     </div>
 
-                    <button type="submit" class="btn btn-gsb w-100 fw-bold mt-2">
+                    <button type="submit" class="btn btn-gsb w-100 fw-bold py-2 mt-2">
                         <i class="bi bi-save me-1"></i> Guardar Usuario
                     </button>
                 </form>
             </div>
         </div>
 
-        <!-- Tabla Usuarios -->
-        <div class="col-md-8">
+        <!-- Tabla de Usuarios Registrados -->
+        <div class="col-lg-8">
             <div class="card card-custom shadow-sm">
                 <h6 class="fw-bold mb-3" style="color: var(--brand-primary);">
                     <i class="bi bi-list-ul me-1"></i> Usuarios Registrados
                 </h6>
                 <div class="table-responsive">
-                    <table class="table align-middle">
+                    <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
                                 <th>Nombre</th>
@@ -196,22 +225,49 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($usuarios as $u): ?>
+                            <?php if (count($usuarios) > 0): ?>
+                                <?php foreach ($usuarios as $u): ?>
+                                    <tr>
+                                        <td><strong><?php echo htmlspecialchars($u['nombre']); ?></strong></td>
+                                        <td><code><?php echo htmlspecialchars($u['usuario']); ?></code></td>
+                                        <td>
+                                            <?php
+                                                // Badges visuales según el rol
+                                                switch($u['rol_id']) {
+                                                    case 1:
+                                                        echo '<span class="badge bg-danger">SUPERADMIN</span>';
+                                                        break;
+                                                    case 2:
+                                                        echo '<span class="badge bg-primary">ADMIN</span>';
+                                                        break;
+                                                    case 3:
+                                                        echo '<span class="badge bg-info text-dark">SOPORTE</span>';
+                                                        break;
+                                                    default:
+                                                        echo '<span class="badge bg-secondary">SOLO VER</span>';
+                                                        break;
+                                                }
+                                            ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if ($u['rol_id'] != 1 && tienePermiso('gestionar_admins')): ?>
+                                                <a href="usuarios.php?eliminar=<?php echo $u['id']; ?>" 
+                                                   class="btn btn-sm btn-outline-danger border-0" 
+                                                   title="Eliminar usuario"
+                                                   onclick="return confirm('¿Seguro que deseas eliminar este usuario?')">
+                                                    <i class="bi bi-trash fs-6"></i>
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="text-muted small"><i class="bi bi-lock-fill"></i> Protegido</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
                                 <tr>
-                                    <td><strong><?php echo htmlspecialchars($u['nombre']); ?></strong></td>
-                                    <td><code><?php echo htmlspecialchars($u['usuario']); ?></code></td>
-                                    <td><span class="badge bg-secondary"><?php echo strtoupper($u['rol']); ?></span></td>
-                                    <td class="text-center">
-                                        <?php if ($u['rol'] !== 'superadmin' && tienePermiso('gestionar_admins')): ?>
-                                            <a href="usuarios.php?eliminar=<?php echo $u['id']; ?>" class="btn btn-sm btn-outline-danger border-0" onclick="return confirm('¿Eliminar usuario?')">
-                                                <i class="bi bi-trash"></i>
-                                            </a>
-                                        <?php else: ?>
-                                            <span class="text-muted small">N/A</span>
-                                        <?php endif; ?>
-                                    </td>
+                                    <td colspan="4" class="text-center text-muted py-3">No hay usuarios registrados.</td>
                                 </tr>
-                            <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -220,5 +276,6 @@ $usuarios = $pdo->query("SELECT id, nombre, usuario, rol, creado_en FROM usuario
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

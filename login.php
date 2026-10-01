@@ -1,74 +1,49 @@
 <?php
+require_once 'db.php'; // Tu archivo de conexión PDO o mysqli
 session_start();
 
-// 1. Si ya inició sesión, redirigir según el rol
-if (isset($_SESSION['usuario']) && isset($_SESSION['rol'])) {
-    $rol = strtolower(trim($_SESSION['rol']));
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $usuario = trim($_POST['usuario'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+
+    if (empty($usuario) || empty($password)) {
+        echo json_encode(["error" => "Usuario y contraseña requeridos"]);
+        exit();
+    }
+
+    // Consulta relacionando la tabla usuarios con roles
+    $stmt = $pdo->prepare("
+        SELECT u.id, u.usuario, u.password, u.nombre, r.nombre AS rol_nombre 
+        FROM usuarios u
+        INNER JOIN roles r ON u.rol_id = r.id
+        WHERE u.usuario = :usuario
+    ");
+    $stmt->execute(['usuario' => $usuario]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($user && password_verify($password, $user['password'])) {
+    // Regenerar ID de sesión por seguridad contra Session Fixation
+    session_regenerate_id(true);
+
+    // Variables de sesión
+    $_SESSION['usuario_id'] = $user['id'];
+    $_SESSION['usuario']    = $user['nombre']; // Usado en index.php
+    $_SESSION['nombre']     = $user['nombre'];
     
-    if ($rol === 'superadmin') {
-        header("Location: superadmin_panel.php");
-    } else {
-        header("Location: inicio.php"); // Admin y usuarios estándar van a inicio.php
-    }
-    exit();
-}
+    // Asignación de Rol
+    // Mantenemos ambos para asegurar compatibilidad total con config_roles.php
+    $_SESSION['rol']        = $user['rol_nombre']; 
+    $_SESSION['rol_nombre'] = $user['rol_nombre'];
 
-$error_message = "";
-
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $host     = "localhost";      
-    $user     = "root";           
-    $password = "";    
-    $database = "proyecto"; 
-
-    $conn = new mysqli($host, $user, $password, $database);
-
-    if ($conn->connect_error) {
-        $error_message = "Error de conexión con el servidor.";
-    } else {
-        $username       = $conn->real_escape_string(trim($_POST['usuario']));
-        $password_input = trim($_POST['password']);
-
-        $sql = "SELECT * FROM usuarios WHERE usuario = '$username' LIMIT 1";
-        $result = $conn->query($sql);
-
-        if ($result && $result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            
-            $rol_db      = strtolower(trim($row['rol']));
-            $password_db = trim($row['password']);
-
-            // Validación de contraseña (compara hash o texto plano)
-            $es_superadmin_directo = ($username === 'superadmin' && $password_input === 'SuperAdmin2026');
-            $es_password_valida    = password_verify($password_input, $password_db) || ($password_input === $password_db);
-
-            if ($es_superadmin_directo || $es_password_valida) {
-                
-                // Guardar datos en la sesión
-                $_SESSION['usuario'] = $row['usuario'];
-                $_SESSION['nombre']  = $row['nombre'];
-                $_SESSION['rol']     = $rol_db; 
-                
-                // 2. Redirección al iniciar sesión
-                if ($username === 'superadmin' || $rol_db === 'superadmin') {
-    $_SESSION['rol'] = 'superadmin';
-    header("Location: superadmin_panel.php");
-} elseif ($rol_db === 'soporte' || $rol_db === 'admin') {
-    $_SESSION['rol'] = $rol_db;
-    header("Location: inicio.php");
+    echo json_encode([
+        "success" => true,
+        "mensaje" => "Inicio de sesión exitoso",
+        "rol"     => $user['rol_nombre']
+    ]);
 } else {
-    header("Location: inicio.php");
+    http_response_code(401);
+    echo json_encode(["error" => "Credenciales incorrectas"]);
 }
-exit();
-
-            } else {
-                $error_message = "Contraseña incorrecta. Inténtelo de nuevo.";
-            }
-        } else {
-            $error_message = "El usuario no se encuentra registrado.";
-        }
-        $conn->close();
-    }
 }
 ?>
 <!DOCTYPE html>
