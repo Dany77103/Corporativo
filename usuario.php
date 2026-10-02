@@ -2,12 +2,13 @@
 session_start();
 require_once 'config_roles.php';
 
-// 1. Verificar autenticación
+// 1. Verificar autenticación y permiso base
 if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
 
+verificarPermiso(['superadmin', 'admin', 'soporte']);
 requerirPermiso('crear_usuarios');
 
 // 2. Conexión a Base de Datos
@@ -28,38 +29,67 @@ try {
 $mensaje = "";
 $error   = "";
 
-// 3. Lógica para Crear Usuario
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_crear_usuario'])) {
+// 3. Lógica para Crear / Editar Usuario
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_guardar_usuario'])) {
+    $id      = intval($_POST['id'] ?? 0);
     $nombre  = trim($_POST['nombre'] ?? '');
     $usuario = trim($_POST['usuario'] ?? '');
     $pass    = trim($_POST['password'] ?? '');
-    $rol_id  = intval($_POST['rol_id'] ?? 4); // Por defecto rol 4 ('solo_ver')
+    $rol_id  = intval($_POST['rol_id'] ?? 4);
 
-    // Validar NOT NULL en servidor sin romper la página
-    if (empty($nombre) || empty($usuario) || empty($pass)) {
-        $error = "Todos los campos (Nombre, Usuario y Contraseña) son obligatorios.";
+    if (empty($nombre) || empty($usuario)) {
+        $error = "El Nombre y el Usuario son campos obligatorios.";
     } else {
-        // Mapear ID de rol para verificación de permisos de asignación
-        // 1 = superadmin, 2 = admin, 3 = soporte, 4 = solo_ver
+        // Validar si intenta asignar Superadmin o Admin sin tener permiso
         if (($rol_id === 1 || $rol_id === 2) && !tienePermiso('gestionar_admins')) {
             $error = "No tienes privilegios para asignar roles de Administrador o Superusuario.";
         } else {
-            $passHash = password_hash($pass, PASSWORD_BCRYPT);
-            
             try {
-                $stmt = $pdo->prepare("INSERT INTO usuarios (nombre, usuario, password, rol_id) VALUES (:nombre, :usuario, :pass, :rol_id)");
-                $stmt->execute([
-                    ':nombre'  => $nombre,
-                    ':usuario' => $usuario,
-                    ':pass'    => $passHash,
-                    ':rol_id'  => $rol_id
-                ]);
-                $mensaje = "Usuario creado exitosamente.";
+                if ($id > 0) {
+                    // --- MODO EDITAR ---
+                    if (!empty($pass)) {
+                        // Si ingresó nueva contraseña, se actualiza el hash
+                        $passHash = password_hash($pass, PASSWORD_BCRYPT);
+                        $stmt = $pdo->prepare("UPDATE usuarios SET nombre = :nombre, usuario = :usuario, password = :pass, rol_id = :rol_id WHERE id = :id");
+                        $stmt->execute([
+                            ':nombre'  => $nombre,
+                            ':usuario' => $usuario,
+                            ':pass'    => $passHash,
+                            ':rol_id'  => $rol_id,
+                            ':id'      => $id
+                        ]);
+                    } else {
+                        // Si dejó la contraseña en blanco, se conserva la actual
+                        $stmt = $pdo->prepare("UPDATE usuarios SET nombre = :nombre, usuario = :usuario, rol_id = :rol_id WHERE id = :id");
+                        $stmt->execute([
+                            ':nombre'  => $nombre,
+                            ':usuario' => $usuario,
+                            ':rol_id'  => $rol_id,
+                            ':id'      => $id
+                        ]);
+                    }
+                    $mensaje = "Usuario actualizado correctamente.";
+                } else {
+                    // --- MODO CREAR ---
+                    if (empty($pass)) {
+                        $error = "La contraseña es obligatoria para nuevos usuarios.";
+                    } else {
+                        $passHash = password_hash($pass, PASSWORD_BCRYPT);
+                        $stmt = $pdo->prepare("INSERT INTO usuarios (nombre, usuario, password, rol_id) VALUES (:nombre, :usuario, :pass, :rol_id)");
+                        $stmt->execute([
+                            ':nombre'  => $nombre,
+                            ':usuario' => $usuario,
+                            ':pass'    => $passHash,
+                            ':rol_id'  => $rol_id
+                        ]);
+                        $mensaje = "Usuario registrado exitosamente.";
+                    }
+                }
             } catch (PDOException $e) {
                 if ($e->getCode() == 23000) {
-                    $error = "El nombre de usuario ya se encuentra registrado.";
+                    $error = "El nombre de usuario ya se encuentra en uso.";
                 } else {
-                    $error = "Error al registrar el usuario: " . $e->getMessage();
+                    $error = "Error al procesar la solicitud: " . $e->getMessage();
                 }
             }
         }
@@ -74,7 +104,6 @@ if (isset($_GET['eliminar'])) {
         $error = "No tienes permiso para eliminar usuarios.";
     } else {
         try {
-            // Prevenir eliminar superadmins directamente desde aquí
             $stmt = $pdo->prepare("DELETE FROM usuarios WHERE id = :id AND rol_id != 1");
             $stmt->execute([':id' => $id_eliminar]);
 
@@ -89,7 +118,7 @@ if (isset($_GET['eliminar'])) {
     }
 }
 
-// 5. Consultar usuarios uniendo con la tabla roles
+// 5. Consultar lista de usuarios
 $stmtUsuarios = $pdo->query("
     SELECT u.id, u.nombre, u.usuario, r.nombre AS rol_nombre, r.id AS rol_id
     FROM usuarios u
@@ -165,45 +194,51 @@ $usuarios = $stmtUsuarios->fetchAll();
     <?php endif; ?>
 
     <div class="row g-4">
-        <!-- Formulario Registro -->
+        <!-- Formulario Agregar / Editar Usuario -->
         <div class="col-lg-4">
             <div class="card card-custom shadow-sm">
-                <h6 class="fw-bold mb-3" style="color: var(--brand-primary);">
-                    <i class="bi bi-person-plus-fill me-1"></i> Nuevo Usuario
+                <h6 class="fw-bold mb-3" style="color: var(--brand-primary);" id="formTitle">
+                    <i class="bi bi-person-plus-fill me-1"></i> Gestionar Usuario
                 </h6>
-                <form action="usuarios.php" method="POST">
-                    <input type="hidden" name="accion_crear_usuario" value="1">
+                <form action="usuarios.php" method="POST" id="formUsuario">
+                    <input type="hidden" name="accion_guardar_usuario" value="1">
+                    <input type="hidden" id="userId" name="id" value="0">
                     
                     <div class="mb-3">
-                        <label class="form-label small text-muted fw-bold">Nombre Completo</label>
-                        <input type="text" name="nombre" class="form-control" placeholder="Ej. Juan Pérez" required maxlength="150">
+                        <label class="form-label small text-muted fw-bold">Usuario (NOT NULL)</label>
+                        <input type="text" name="usuario" id="userUsername" class="form-control" placeholder="Ej. jperez" required maxlength="100">
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label small text-muted fw-bold">Usuario</label>
-                        <input type="text" name="usuario" class="form-control" placeholder="Ej. jperez" required maxlength="100">
+                        <label class="form-label small text-muted fw-bold">Nombre Completo</label>
+                        <input type="text" name="nombre" id="userName" class="form-control" placeholder="Ej. Juan Pérez" required maxlength="150">
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Contraseña</label>
-                        <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+                        <input type="password" name="password" id="userPass" class="form-control" placeholder="Dejar en blanco para no cambiar">
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label small text-muted fw-bold">Rol</label>
-                        <select name="rol_id" class="form-select" required>
-                            <option value="4">Solo Ver (Lector)</option>
-                            <option value="3">Soporte (Ver, Editar, Eliminar)</option>
-                            <option value="2">Administrador</option>
+                        <select name="rol_id" id="userRol" class="form-select" required>
                             <?php if (tienePermiso('gestionar_admins')): ?>
-                                <option value="1">Superusuario</option>
+                                <option value="1">Superusuario (Control Total)</option>
                             <?php endif; ?>
+                            <option value="2">Administrador</option>
+                            <option value="3">Soporte (Editar, Ver, Borrar)</option>
+                            <option value="4" selected>Solo Ver (Lectura)</option>
                         </select>
                     </div>
 
-                    <button type="submit" class="btn btn-gsb w-100 fw-bold py-2 mt-2">
-                        <i class="bi bi-save me-1"></i> Guardar Usuario
-                    </button>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-gsb fw-bold py-2 mt-2">
+                            <i class="bi bi-save me-1"></i> Guardar Usuario
+                        </button>
+                        <button type="button" id="btnCancelar" class="btn btn-sm btn-light border d-none" onclick="limpiarFormulario()">
+                            Cancelar Edición
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -232,7 +267,6 @@ $usuarios = $stmtUsuarios->fetchAll();
                                         <td><code><?php echo htmlspecialchars($u['usuario']); ?></code></td>
                                         <td>
                                             <?php
-                                                // Badges visuales según el rol
                                                 switch($u['rol_id']) {
                                                     case 1:
                                                         echo '<span class="badge bg-danger">SUPERADMIN</span>';
@@ -250,15 +284,21 @@ $usuarios = $stmtUsuarios->fetchAll();
                                             ?>
                                         </td>
                                         <td class="text-center">
+                                            <!-- Botón Cargar Datos en Formulario para Editar -->
+                                            <button type="button" 
+                                                    class="btn btn-sm btn-outline-primary border-0 me-1"
+                                                    onclick="cargarUsuario(<?php echo htmlspecialchars(json_encode($u)); ?>)"
+                                                    title="Editar usuario">
+                                                <i class="bi bi-pencil-fill"></i>
+                                            </button>
+
                                             <?php if ($u['rol_id'] != 1 && tienePermiso('gestionar_admins')): ?>
                                                 <a href="usuarios.php?eliminar=<?php echo $u['id']; ?>" 
                                                    class="btn btn-sm btn-outline-danger border-0" 
                                                    title="Eliminar usuario"
                                                    onclick="return confirm('¿Seguro que deseas eliminar este usuario?')">
-                                                    <i class="bi bi-trash fs-6"></i>
+                                                    <i class="bi bi-trash-fill"></i>
                                                 </a>
-                                            <?php else: ?>
-                                                <span class="text-muted small"><i class="bi bi-lock-fill"></i> Protegido</span>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
@@ -277,5 +317,24 @@ $usuarios = $stmtUsuarios->fetchAll();
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    function cargarUsuario(data) {
+        document.getElementById('userId').value = data.id;
+        document.getElementById('userUsername').value = data.usuario;
+        document.getElementById('userName').value = data.nombre;
+        document.getElementById('userRol').value = data.rol_id;
+        document.getElementById('userPass').value = ''; // Limpiar campo contraseña
+        
+        document.getElementById('formTitle').innerHTML = '<i class="bi bi-pencil-square me-1"></i> Editar Usuario #' + data.id;
+        document.getElementById('btnCancelar').classList.remove('d-none');
+    }
+
+    function limpiarFormulario() {
+        document.getElementById('userId').value = '0';
+        document.getElementById('formUsuario').reset();
+        document.getElementById('formTitle').innerHTML = '<i class="bi bi-person-plus-fill me-1"></i> Gestionar Usuario';
+        document.getElementById('btnCancelar').classList.add('d-none');
+    }
+</script>
 </body>
 </html>

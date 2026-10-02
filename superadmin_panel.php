@@ -1,13 +1,13 @@
 <?php
 session_start();
 
-// Validar que solo el superadmin pueda entrar
-if (!isset($_SESSION['rol']) || $_SESSION['rol'] !== 'superadmin') {
-    header('Location: index.php'); 
+// 1. Validar que solo el superadmin pueda entrar
+if (!isset($_SESSION['rol']) || strtolower(trim($_SESSION['rol'])) !== 'superadmin') {
+    header('Location: inicio.php'); 
     exit();
 }
 
-// Credenciales directas a tu base de datos 'proyecto'
+// 2. Credenciales de conexión a la base de datos 'proyecto'
 $host     = "localhost";
 $user     = "root";
 $password = "";
@@ -19,39 +19,62 @@ if ($conexion->connect_error) {
     die("Error de conexión con la base de datos: " . $conexion->connect_error);
 }
 
+$conexion->set_charset("utf8mb4");
 $mensaje = "";
 
-// Procesar alta de nuevo usuario / administrador
+// 3. Procesar alta de nuevo usuario / administrador
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['crear_admin'])) {
-    $nuevo_usuario  = trim($_POST['nuevo_usuario']);
-    $nombre_completo = trim($_POST['nombre_completo']);
-    $nueva_password = $_POST['nueva_password'];
-    $rol_asignado   = $_POST['rol_asignado']; // 'admin' o 'superadmin'
+    $nuevo_usuario   = trim($_POST['nuevo_usuario'] ?? '');
+    $nombre_completo = trim($_POST['nombre_completo'] ?? '');
+    $nueva_password  = $_POST['nueva_password'] ?? '';
+    $rol_nombre      = trim($_POST['rol_asignado'] ?? ''); // 'admin', 'superadmin', 'solo_ver'
 
-    if (!empty($nuevo_usuario) && !empty($nueva_password)) {
+    if (!empty($nuevo_usuario) && !empty($nueva_password) && !empty($rol_nombre)) {
         // Encriptar la contraseña con BCRYPT
         $hash_pass = password_hash($nueva_password, PASSWORD_BCRYPT);
 
-        $stmt = $conexion->prepare("INSERT INTO usuarios (usuario, password, nombre, rol) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("ssss", $nuevo_usuario, $hash_pass, $nombre_completo, $rol_asignado);
+        // Buscar el ID del rol ingresado
+        $stmt_rol = $conexion->prepare("SELECT id FROM roles WHERE LOWER(nombre) = LOWER(?) LIMIT 1");
+        $stmt_rol->bind_param("s", $rol_nombre);
+        $stmt_rol->execute();
+        $res_rol = $stmt_rol->get_result();
 
-        if ($stmt->execute()) {
-            $mensaje = "<div class='alert alert-success alert-dismissible fade show' role='alert'>
-                            <i class='bi bi-check-circle-fill me-2'></i> Usuario <b>$nuevo_usuario</b> registrado con éxito como <b>$rol_asignado</b>.
-                            <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
-                        </div>";
+        if ($row_rol = $res_rol->fetch_assoc()) {
+            $rol_id = $row_rol['id'];
+
+            // Insertar el nuevo usuario usando rol_id
+            $stmt = $conexion->prepare("INSERT INTO usuarios (usuario, password, nombre, rol_id) VALUES (?, ?, ?, ?)");
+            $stmt->bind_param("sssi", $nuevo_usuario, $hash_pass, $nombre_completo, $rol_id);
+
+            if ($stmt->execute()) {
+                $mensaje = "<div class='alert alert-success alert-dismissible fade show' role='alert'>
+                                <i class='bi bi-check-circle-fill me-2'></i> Usuario <b>" . htmlspecialchars($nuevo_usuario) . "</b> registrado con éxito como <b>" . htmlspecialchars($rol_nombre) . "</b>.
+                                <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+                            </div>";
+            } else {
+                $mensaje = "<div class='alert alert-danger alert-dismissible fade show' role='alert'>
+                                <i class='bi bi-exclamation-triangle-fill me-2'></i> Error al crear usuario (es posible que el usuario ya exista).
+                                <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+                            </div>";
+            }
+            $stmt->close();
         } else {
-            $mensaje = "<div class='alert alert-danger alert-dismissible fade show' role='alert'>
-                            <i class='bi bi-exclamation-triangle-fill me-2'></i> Error al crear usuario (es posible que el nombre de usuario ya exista).
+            $mensaje = "<div class='alert alert-warning alert-dismissible fade show' role='alert'>
+                            <i class='bi bi-exclamation-circle-fill me-2'></i> El rol seleccionado no existe en la base de datos.
                             <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
                         </div>";
         }
-        $stmt->close();
+        $stmt_rol->close();
     }
 }
 
-// Obtener la lista actualizada de usuarios
-$usuarios = $conexion->query("SELECT id, usuario, nombre, rol FROM usuarios");
+// 4. Obtener la lista de usuarios uniendo la tabla roles
+$usuarios = $conexion->query("
+    SELECT u.id, u.usuario, u.nombre, r.nombre AS rol 
+    FROM usuarios u
+    INNER JOIN roles r ON u.rol_id = r.id
+    ORDER BY u.id ASC
+");
 ?>
 
 <!DOCTYPE html>
@@ -105,8 +128,8 @@ $usuarios = $conexion->query("SELECT id, usuario, nombre, rol FROM usuarios");
             <i class="bi bi-shield-lock-fill text-warning me-2"></i>GSB CORP - Control de Superadmin
         </span>
         <div class="d-flex align-items-center gap-2">
-            <span class="text-light small me-2"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['usuario'] ?? 'Superadmin'); ?></span>
-            <a href="index.php" class="btn btn-outline-light btn-sm"><i class="bi bi-box-seam me-1"></i> Ir al Inventario</a>
+            <span class="text-light small me-2"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['nombre'] ?? $_SESSION['usuario'] ?? 'Superadmin'); ?></span>
+            <a href="inicio.php" class="btn btn-outline-light btn-sm"><i class="bi bi-box-seam me-1"></i> Ir al Inicio</a>
             <a href="logout.php" class="btn btn-danger btn-sm"><i class="bi bi-power"></i></a>
         </div>
     </div>
@@ -182,9 +205,12 @@ $usuarios = $conexion->query("SELECT id, usuario, nombre, rol FROM usuarios");
                                         <td><b><?= htmlspecialchars($user['usuario']); ?></b></td>
                                         <td><?= htmlspecialchars($user['nombre'] ?? 'Sin nombre'); ?></td>
                                         <td>
-                                            <?php if ($user['rol'] === 'superadmin'): ?>
+                                            <?php 
+                                            $rolLower = strtolower(trim($user['rol']));
+                                            if ($rolLower === 'superadmin'): 
+                                            ?>
                                                 <span class="badge bg-danger"><i class="bi bi-shield-check"></i> superadmin</span>
-                                            <?php elseif ($user['rol'] === 'admin'): ?>
+                                            <?php elseif ($rolLower === 'admin'): ?>
                                                 <span class="badge bg-primary"><i class="bi bi-person-gear"></i> admin</span>
                                             <?php else: ?>
                                                 <span class="badge bg-secondary"><?= htmlspecialchars($user['rol']); ?></span>

@@ -10,6 +10,8 @@ if (!isset($_SESSION['usuario']) || !tienePermiso('ver')) {
     exit();
 }
 
+
+verificarPermiso(['superadmin', 'admin', 'soporte']);
 // ==========================================
 // CONEXIÓN A LA BASE DE DATOS (PDO)
 // ==========================================
