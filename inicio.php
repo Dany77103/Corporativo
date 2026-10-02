@@ -1,10 +1,24 @@
 <?php
 session_start();
 
-// Validar que exista sesión y que el rol sea 'admin' o 'soporte'
-$roles_permitidos = ['admin', 'soporte', 'superadmin'];
+// 1. Validar que exista sesión activa
+if (!isset($_SESSION['usuario']) || !isset($_SESSION['rol'])) {
+    header("Location: login.php");
+    exit();
+}
 
-if (!isset($_SESSION['usuario']) || !in_array(strtolower($_SESSION['rol'] ?? ''), $roles_permitidos)) {
+$rol_actual_raw = strtolower(trim($_SESSION['rol']));
+
+// 2. Si el usuario es superadmin, redirigir a su panel correspondiente
+if ($rol_actual_raw === 'superadmin') {
+    header("Location: superadmin_panel.php");
+    exit();
+}
+
+// 3. Validar roles permitidos para la vista de inicio
+$roles_permitidos = ['admin', 'soporte'];
+
+if (!in_array($rol_actual_raw, $roles_permitidos)) {
     session_unset();
     session_destroy();
     header("Location: login.php");
@@ -29,7 +43,7 @@ if (!$conn->connect_error) {
 
 // Variables de sesión para la interfaz
 $usuario_actual = $_SESSION['nombre'] ?? $_SESSION['usuario'] ?? 'Usuario';
-$rol_actual     = ucfirst(strtolower($_SESSION['rol'] ?? 'usuario'));
+$rol_actual     = ucfirst($rol_actual_raw);
 ?>
 <!DOCTYPE html>
 <html lang="es">

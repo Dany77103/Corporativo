@@ -1,90 +1,78 @@
 <?php
 session_start();
 
-// 1. Si ya existe sesión activa, redirigir según el rol
-if (isset($_SESSION['usuario'])) {
-    $rol = strtolower(trim($_SESSION['rol'] ?? ''));
-    if ($rol === 'superadmin') {
-        header("Location: superadmin_panel.php");
-    } else {
-        header("Location: inicio.php");
-    }
-    exit();
-}
-
-// 2. Procesar el inicio de sesión vía POST
+// Si se recibe una petición POST (autenticación)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (ob_get_length()) ob_clean();
     header('Content-Type: application/json; charset=utf-8');
-    require_once 'conexion.php';
 
-    $usuario  = trim($_POST['usuario'] ?? '');
-    $password = trim($_POST['password'] ?? '');
+    $host     = "localhost";      
+    $user     = "root";           
+    $password = "";    
+    $database = "proyecto"; 
 
-    if (empty($usuario) || empty($password)) {
-        http_response_code(400);
-        echo json_encode(["error" => "Usuario y contraseña requeridos"]);
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $conn = @new mysqli($host, $user, $password, $database);
+
+    if ($conn->connect_error) {
+        echo json_encode(["status" => "error", "message" => "Error de conexión a MySQL."]);
         exit();
     }
 
-    try {
-        // Consultar con JOIN a roles
-        $user = null;
-        try {
-            $stmt = $pdo->prepare("
-                SELECT u.id, u.usuario, u.password, u.nombre, r.nombre AS rol_nombre 
-                FROM usuarios u
-                INNER JOIN roles r ON u.rol_id = r.id
-                WHERE u.usuario = :usuario
-            ");
-            $stmt->execute(['usuario' => $usuario]);
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            // Fallback en caso de que consulte la columna rol directa
-            $stmt = $pdo->prepare("
-                SELECT id, usuario, password, nombre, rol AS rol_nombre 
-                FROM usuarios 
-                WHERE usuario = :usuario
-            ");
-            $stmt->execute(['usuario' => $usuario]);
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        }
+    $conn->set_charset("utf8mb4");
 
-        // Validación de credenciales
-        if ($user && (password_verify($password, $user['password']) || $password === $user['password'])) {
-            session_regenerate_id(true);
+    $usuario_input  = trim($_POST['usuario'] ?? '');
+    $password_input = trim($_POST['password'] ?? '');
 
-            // Obtener y limpiar la cadena del rol
-            $rolLimpio = strtolower(trim($user['rol_nombre']));
+    if (empty($usuario_input) || empty($password_input)) {
+        echo json_encode(["status" => "error", "message" => "Por favor llena todos los campos."]);
+        exit();
+    }
 
-            $_SESSION['usuario_id'] = $user['id'];
+    // Consulta de usuario
+    $sql = "SELECT * FROM usuarios WHERE LOWER(usuario) = LOWER(?)";
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
+        echo json_encode(["status" => "error", "message" => "Error SQL: " . $conn->error]);
+        exit();
+    }
+
+    $stmt->bind_param("s", $usuario_input);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($user = $result->fetch_assoc()) {
+        if ($password_input === $user['password']) {
+            $_SESSION['id_usuario'] = $user['id'] ?? 1;
             $_SESSION['usuario']    = $user['usuario'];
-            $_SESSION['nombre']     = $user['nombre'];
-            $_SESSION['rol']        = $rolLimpio; // Guardamos en minúsculas
+            $_SESSION['nombre']     = $user['nombre'] ?? $user['usuario'];
 
-            // Redirección estricta por rol
-            if ($rolLimpio === 'superadmin') {
-                $redirectUrl = 'superadmin_panel.php';
+            $user_lower = strtolower(trim($user['usuario']));
+
+            // Asignación estricta de rol y redirección según el nombre de usuario
+            if ($user_lower === 'superadmin') {
+                $rol_detectado = 'superadmin';
+                $redirect = "superadmin_panel.php";
             } else {
-                $redirectUrl = 'inicio.php';
+                // Para 'admin' y cualquier otro usuario del sistema
+                $rol_detectado = 'admin';
+                $redirect = "inicio.php";
             }
 
+            $_SESSION['rol'] = $rol_detectado;
+
             echo json_encode([
-                "success"  => true,
-                "mensaje"  => "Inicio de sesión exitoso",
-                "rol"      => $rolLimpio,
-                "redirect" => $redirectUrl
+                "status"   => "success", 
+                "message"  => "Inicio de sesión correcto", 
+                "redirect" => $redirect
             ]);
             exit();
-        } else {
-            http_response_code(401);
-            echo json_encode(["error" => "Credenciales incorrectas"]);
-            exit();
         }
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(["error" => "Error en la consulta: " . $e->getMessage()]);
-        exit();
     }
+
+    echo json_encode(["status" => "error", "message" => "Usuario o contraseña incorrectos."]);
+    exit();
 }
 ?>
 <!DOCTYPE html>
@@ -116,24 +104,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-card {
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
             border-radius: 20px;
-            box-shadow: 0 15px 35px rgba(0, 45, 93, 0.1);
+            border: 1px solid var(--border-color);
+            padding: 35px;
             width: 100%;
-            max-width: 420px;
-            padding: 35px 30px;
+            max-width: 400px;
+            box-shadow: 0 15px 35px rgba(0, 45, 93, 0.08);
         }
-        .btn-gsb {
+        .btn-primary-custom {
             background-color: var(--brand-primary);
-            color: #ffffff;
-            border-radius: 50px;
-            font-weight: 600;
+            color: white;
+            border: none;
+            border-radius: 10px;
             padding: 12px;
-            transition: all 0.3s ease;
+            font-weight: 600;
+            width: 100%;
         }
-        .btn-gsb:hover {
+        .btn-primary-custom:hover {
             background-color: var(--brand-dark);
-            color: #ffffff;
+            color: white;
         }
     </style>
 </head>
@@ -141,46 +130,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="login-card">
     <div class="text-center mb-4">
-        <h4 class="fw-bold mb-1" style="color: var(--brand-primary);">
-            <i class="bi bi-shield-lock-fill me-2"></i>GSB Inventario
-        </h4>
-        <p class="text-muted small">Ingresa tus credenciales para acceder</p>
+        <h4 class="fw-bold m-0" style="color: var(--brand-dark);">Iniciar Sesión</h4>
+        <small class="text-muted">GSB Control de Inventarios</small>
     </div>
 
-    <div id="alertBox" class="alert alert-danger d-none" role="alert"></div>
+    <div id="alert-box" class="alert d-none" role="alert"></div>
 
     <form id="loginForm">
         <div class="mb-3">
-            <label class="form-label small fw-bold">Usuario</label>
-            <div class="input-group">
-                <span class="input-group-text bg-light"><i class="bi bi-person"></i></span>
-                <input type="text" id="usuario" name="usuario" class="form-control" placeholder="Ej. admin" required autocomplete="username">
-            </div>
+            <label for="usuario" class="form-label fw-semibold small">Usuario</label>
+            <input type="text" class="form-control" id="usuario" name="usuario" required autocomplete="username">
         </div>
-
         <div class="mb-4">
-            <label class="form-label small fw-bold">Contraseña</label>
-            <div class="input-group">
-                <span class="input-group-text bg-light"><i class="bi bi-key"></i></span>
-                <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
-            </div>
+            <label for="password" class="form-label fw-semibold small">Contraseña</label>
+            <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
         </div>
-
-        <button type="submit" id="btnSubmit" class="btn btn-gsb w-100">
-            Iniciar Sesión
-        </button>
+        <button type="submit" class="btn btn-primary-custom">Entrar</button>
     </form>
 </div>
 
 <script>
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
-    const alertBox = document.getElementById('alertBox');
-    const btnSubmit = document.getElementById('btnSubmit');
     
+    const alertBox = document.getElementById('alert-box');
     alertBox.classList.add('d-none');
-    btnSubmit.disabled = true;
-    btnSubmit.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ingresando...';
 
     const formData = new FormData(this);
 
@@ -190,22 +164,28 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             body: formData
         });
 
-        const data = await response.json();
+        const textResponse = await response.text();
+        const data = JSON.parse(textResponse);
 
-        if (response.ok && data.success) {
-            window.location.href = data.redirect;
+        if (data.status === 'success') {
+            alertBox.className = 'alert alert-success';
+            alertBox.textContent = 'Acceso concedido. Redirigiendo...';
+            alertBox.classList.remove('d-none');
+            setTimeout(() => {
+                window.location.href = data.redirect;
+            }, 800);
         } else {
-            alertBox.textContent = data.error || 'Ocurrió un error al iniciar sesión';
+            alertBox.className = 'alert alert-danger';
+            alertBox.textContent = data.message || 'Credenciales incorrectas';
             alertBox.classList.remove('d-none');
         }
-    } catch (error) {
-        alertBox.textContent = 'Error de conexión con el servidor.';
+    } catch (err) {
+        alertBox.className = 'alert alert-danger';
+        alertBox.textContent = 'Error al procesar la respuesta del servidor.';
         alertBox.classList.remove('d-none');
-    } finally {
-        btnSubmit.disabled = false;
-        btnSubmit.innerHTML = 'Iniciar Sesión';
     }
 });
 </script>
+
 </body>
 </html>
