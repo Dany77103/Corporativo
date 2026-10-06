@@ -37,13 +37,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $result = $stmt->get_result();
 
     if ($user = $result->fetch_assoc()) {
+        // Validación de contraseña (si usas texto plano; si usas hash cambia a password_verify)
         if ($password_input === $user['password']) {
-            $_SESSION['id_usuario'] = $user['id'];
-            $_SESSION['usuario']    = $user['usuario'];
-            $_SESSION['nombre']     = $user['nombre'];
-            $_SESSION['rol']        = strtolower(trim($user['nombre_rol']));
+            $rol_normalizado = strtolower(trim($user['nombre_rol']));
 
-            $redirect = ($_SESSION['rol'] === 'superadmin') ? "superadmin_panel.php" : "inicio.php";
+            // 1. Guardar datos principales del usuario
+            $_SESSION['id_usuario'] = $user['id'];
+            $_SESSION['usuario']    = $user['usuario']; // Requerido por la validación de index.php
+            $_SESSION['nombre']     = $user['nombre'];
+            $_SESSION['rol']        = $rol_normalizado;
+
+            // 2. Cargar permisos de roles requeridos por config_roles.php / index.php
+            $_SESSION['permisos'] = [
+                'superadmin' => ($rol_normalizado === 'superadmin'),
+                'admin'      => ($rol_normalizado === 'admin' || $rol_normalizado === 'administrador'),
+                'soporte'    => ($rol_normalizado === 'soporte')
+            ];
+
+            // 3. Determinar la página de destino
+            // Nota: Si quieres que TODOS vayan a index.php sin excepción, cambia $redirect a "index.php"
+            $redirect = ($rol_normalizado === 'superadmin') ? "superadmin_panel.php" : "index.php";
+
+            // Guardar y cerrar la sesión para evitar pérdida de datos al redirigir mediante JavaScript
+            session_write_close();
 
             http_response_code(200);
             echo json_encode([

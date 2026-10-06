@@ -2,7 +2,7 @@
 session_start();
 require_once 'config_roles.php';
 
-// Validar inicio de sesión
+// Validar inicio de sesión y que el rol tenga al menos permiso de consulta
 if (!isset($_SESSION['usuario']) || !tienePermiso('ver')) {
     session_unset();
     session_destroy();
@@ -10,8 +10,6 @@ if (!isset($_SESSION['usuario']) || !tienePermiso('ver')) {
     exit();
 }
 
-
-verificarPermiso(['superadmin', 'admin', 'soporte']);
 // ==========================================
 // CONEXIÓN A LA BASE DE DATOS (PDO)
 // ==========================================
@@ -21,7 +19,7 @@ $password = "";
 $database = "proyecto"; 
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $user, $password, [
+    $pdo = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $user,$password, [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
@@ -30,11 +28,15 @@ try {
     die("Error de conexión a la base de datos: " . $e->getMessage());
 }
 
-// --- LÓGICA: ELIMINAR REGISTRO ---
-if (isset($_GET['accion']) && $_GET['accion'] === 'eliminar' && isset($_GET['id'])) {
-    $id_eliminar = intval($_GET['id']);
-    $stmt = $pdo->prepare("DELETE FROM equipos WHERE id = :id");
-    if ($stmt->execute([':id' => $id_eliminar])) {
+// --- LÓGICA: ELIMINAR REGISTRO (solo por POST y con permiso 'borrar') ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_eliminar'])) {
+    if (!tienePermiso('borrar')) {
+        header("Location: index.php?vista=registro&status=denied");
+        exit();
+    }
+    $id_eliminar = intval($_POST['id'] ?? 0);
+    $stmt =$pdo->prepare("DELETE FROM equipos WHERE id = :id");
+    if ($stmt->execute([':id' =>$id_eliminar])) {
         header("Location: index.php?vista=registro&status=deleted");
         exit();
     }
@@ -42,6 +44,10 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'eliminar' && isset($_GET['id'
 
 // --- LÓGICA: EDITAR / ACTUALIZAR REGISTRO ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_editar'])) {
+    if (!tienePermiso('editar')) {
+        header("Location: index.php?vista=registro&status=denied");
+        exit();
+    }
     $sql = "UPDATE equipos SET 
                 `MARCA` = :marca, `MODELO` = :modelo, `S/N` = :sn, 
                 `SISTEMA OPERATIVO` = :sistema_op, `ARQUITECTURA` = :arquitectura, 
@@ -53,8 +59,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_editar'])) {
                 `OBSERVACIONES2` = :observaciones2, `CARGADOR` = :cargador, `CLIENTE AZURE` = :cliente_azure
             WHERE id = :id";
             
-    $stmt = $pdo->prepare($sql);
-    $params = [
+    $stmt =$pdo->prepare($sql);$params = [
         ':marca'          => trim($_POST['marca'] ?? ''),
         ':modelo'         => trim($_POST['modelo'] ?? ''),
         ':sn'             => trim($_POST['sn'] ?? ''),
@@ -89,6 +94,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_editar'])) {
 
 // --- LÓGICA: PROCESAR FORMULARIO MANUAL (ALTA) ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_registrar'])) {
+    if (!tienePermiso('crear_equipos')) {
+        header("Location: index.php?vista=registro&status=denied");
+        exit();
+    }
     $sql = "INSERT INTO equipos (
                 `MARCA`, `MODELO`, `S/N`, `SISTEMA OPERATIVO`, `ARQUITECTURA`, `HOSTNAME`, 
                 `PROCESADOR`, `RAM`, `GRAFICO`, `DISCO MECANICO`, `DISCO SSD`, `MAC`, 
@@ -101,8 +110,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_registrar'])) 
                 :act_directory, :mfa, :usuario, :observaciones2, :cargador, :cliente_azure
             )";
             
-    $stmt = $pdo->prepare($sql);
-    $params = [
+    $stmt =$pdo->prepare($sql);$params = [
         ':marca'          => trim($_POST['marca'] ?? ''),
         ':modelo'         => trim($_POST['modelo'] ?? ''),
         ':sn'             => trim($_POST['sn'] ?? ''),
@@ -136,13 +144,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_registrar'])) 
 
 // --- PROCESAR CARGA MASIVA (CSV Y XLSX) ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
-    if (isset($_FILES['archivo_excel']) && $_FILES['archivo_excel']['error'] === 0) {
-        $filename = $_FILES['archivo_excel']['tmp_name'];
-        $original_name = $_FILES['archivo_excel']['name'];
+    if (!tienePermiso('crear_equipos')) {
+        header("Location: index.php?vista=registro&status=denied");
+        exit();
+    }
+    if (isset($_FILES['archivo_excel']) &&$_FILES['archivo_excel']['error'] === 0) {
+        $filename =$_FILES['archivo_excel']['tmp_name'];
+        $original_name =$_FILES['archivo_excel']['name'];
         $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
         
-        $headers = [];
-        $filas_datos = [];
+        $headers = [];$filas_datos = [];
 
         if ($extension === 'xlsx') {
             if (!file_exists('SimpleXLSX.php')) {
@@ -150,10 +161,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
             }
             require_once 'SimpleXLSX.php';
             if ($xlsx = Shuchkin\SimpleXLSX::parse($filename)) {
-                $todas_las_filas = $xlsx->rows();
+                $todas_las_filas =$xlsx->rows();
                 if (!empty($todas_las_filas)) {
                     $headers = array_shift($todas_las_filas); 
-                    $filas_datos = $todas_las_filas; 
+                    $filas_datos =$todas_las_filas; 
                 }
             } else {
                 die("<script>alert('ERROR al leer el archivo de Excel: " . Shuchkin\SimpleXLSX::parseError() . "'); window.location.href='index.php?vista=registro';</script>");
@@ -165,10 +176,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
             $separador = (strpos($primera_linea, ';') !== false) ? ';' : ',';
             rewind($handle);
 
-            $headers = fgetcsv($handle, 1000, $separador);
+            $headers = fgetcsv($handle, 1000,$separador);
             if ($headers !== FALSE) {
-                while (($data = fgetcsv($handle, 1000, $separador)) !== FALSE) {
-                    $filas_datos[] = $data;
+                while (($data = fgetcsv($handle, 1000,$separador)) !== FALSE) {
+                    $filas_datos[] =$data;
                 }
             }
             fclose($handle);
@@ -179,7 +190,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
         if (!empty($headers)) {
             $headers = array_map(function($h) {
                 $h = mb_convert_encoding($h, "UTF-8", "UTF-8, ISO-8859-1, Windows-1252");
-                $h = preg_replace('/[\x00-\x1F\x7F-\xFF]/', '', $h);
+                $h = preg_replace('/[\x00-\x1F\x7F-\xFF]/', '',$h);
                 return strtoupper(trim($h));
             }, $headers);
 
@@ -207,28 +218,27 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
             ];
 
             $pos['S_N'] = false;
-            foreach (['S/N', 'SERIE', 'SN', 'NUMERO DE SERIE', 'NÚMERO DE SERIE'] as $posible_nombre) {
-                $idx = array_search($posible_nombre, $headers);
+            foreach (['S/N', 'SERIE', 'SN', 'NUMERO DE SERIE', 'NÚMERO DE SERIE'] as $posible_nombre) {$idx = array_search($posible_nombre,$headers);
                 if ($idx !== false) {
-                    $pos['S_N'] = $idx;
+                    $pos['S_N'] =$idx;
                     break;
                 }
             }
 
             $pos_observaciones_1 = false;
             $pos_observaciones_2 = false;
-            foreach ($headers as $key => $val) {
+            foreach ($headers as $key =>$val) {
                 if ($val === 'OBSERVACIONES') {
                     if ($pos_observaciones_1 === false) {
-                        $pos_observaciones_1 = $key;
+                        $pos_observaciones_1 =$key;
                     } else {
-                        $pos_observaciones_2 = $key;
+                        $pos_observaciones_2 =$key;
                         break;
                     }
                 }
             }
 
-            $stmtCsv = $pdo->prepare("INSERT INTO equipos (
+            $stmtCsv =$pdo->prepare("INSERT INTO equipos (
                 `MARCA`, `MODELO`, `S/N`, `SISTEMA OPERATIVO`, `ARQUITECTURA`, `HOSTNAME`, 
                 `PROCESADOR`, `RAM`, `GRAFICO`, `DISCO MECANICO`, `DISCO SSD`, `MAC`, 
                 `OBSERVACIONES`, `ASIGNACION GSB`, `PAIS`, `CIUDAD`, `ASIGNACION VP`, 
@@ -237,7 +247,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
 
             $guardados = 0;
 
-            foreach ($filas_datos as $data) {
+            foreach ($filas_datos as$data) {
                 $data = array_map(function($d) {
                     return mb_convert_encoding($d, "UTF-8", "UTF-8, ISO-8859-1, Windows-1252");
                 }, $data);
@@ -253,13 +263,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
                 $hostname = $getVal($pos['HOSTNAME']);
 
                 if (!empty($hostname)) {
-                    $rowParams = [
-                        $getVal($pos['MARCA']),
-                        $getVal($pos['MODELO']),
-                        $getVal($pos['S_N']),
-                        $getVal($pos['SISTEMA_OP']),
-                        $getVal($pos['ARQUITECTURA']),
-                        $hostname,
+                    $rowParams = [$getVal($pos['MARCA']),$getVal($pos['MODELO']),$getVal($pos['S_N']),$getVal($pos['SISTEMA_OP']),$getVal($pos['ARQUITECTURA']),$hostname,
                         $getVal($pos['PROCESADOR']),
                         $getVal($pos['RAM']),
                         $getVal($pos['GRAFICO']),
@@ -279,8 +283,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
                         $getVal($pos['CLIENTE_AZURE'])
                     ];
 
-                    if ($stmtCsv->execute($rowParams)) {
-                        $guardados++;
+                    if ($stmtCsv->execute($rowParams)) {$guardados++;
                     }
                 }
             }
@@ -295,10 +298,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
     }
 }
 
-$vista = $_GET['vista'] ?? 'dashboard';
+$vista =$_GET['vista'] ?? 'dashboard';
 
 // OPTIMIZACIÓN DASHBOARD: Consulta unificada
-$stats = $pdo->query("SELECT 
+$stats =$pdo->query("SELECT 
     COUNT(*) as total,
     SUM(CASE WHEN `MARCA` LIKE '%LENOVO%' THEN 1 ELSE 0 END) as lenovo,
     SUM(CASE WHEN `MARCA` LIKE '%HP%' OR `MARCA` LIKE '%HEWLETT%' THEN 1 ELSE 0 END) as hp
@@ -307,62 +310,53 @@ FROM equipos")->fetch();
 $total_equipos = (int)($stats['total'] ?? 0);
 $total_lenovo  = (int)($stats['lenovo'] ?? 0);
 $total_hp      = (int)($stats['hp'] ?? 0);
-$total_otros   = $total_equipos - ($total_lenovo + $total_hp);
+$total_otros   =$total_equipos - ($total_lenovo +$total_hp);
 
-$resMarcas = $pdo->query("SELECT MARCA, COUNT(*) as cantidad FROM equipos GROUP BY MARCA");
-$marcasLabels = [];
-$marcasData   = [];
-while ($m = $resMarcas->fetch()) {
-    $marcasLabels[] = $m['MARCA'] ? $m['MARCA'] : 'Sin Especificar';
+$resMarcas =$pdo->query("SELECT MARCA, COUNT(*) as cantidad FROM equipos GROUP BY MARCA");
+$marcasLabels = [];$marcasData   = [];
+while ($m = $resMarcas->fetch()) {$marcasLabels[] = $m['MARCA'] ?$m['MARCA'] : 'Sin Especificar';
     $marcasData[]   = (int)$m['cantidad'];
 }
 
-$resSO = $pdo->query("SELECT `SISTEMA OPERATIVO` as so, COUNT(*) as cantidad FROM equipos GROUP BY `SISTEMA OPERATIVO`");
-$soLabels = [];
-$soData   = [];
-while ($s = $resSO->fetch()) {
-    $soLabels[] = $s['so'] ? $s['so'] : 'Desconocido';
+$resSO =$pdo->query("SELECT `SISTEMA OPERATIVO` as so, COUNT(*) as cantidad FROM equipos GROUP BY `SISTEMA OPERATIVO`");
+$soLabels = [];$soData   = [];
+while ($s = $resSO->fetch()) {$soLabels[] = $s['so'] ?$s['so'] : 'Desconocido';
     $soData[]   = (int)$s['cantidad'];
 }
 
 // FILTROS DE REPORTES
-$filtro_marca = isset($_GET['f_marca']) ? trim($_GET['f_marca']) : '';
-$sql_reporte = "SELECT * FROM equipos WHERE 1=1";
+$filtro_marca = isset($_GET['f_marca']) ? trim($_GET['f_marca']) : '';$sql_reporte = "SELECT * FROM equipos WHERE 1=1";
 $params_reporte = [];
 
-if (!empty($filtro_marca)) {
-    $sql_reporte .= " AND `MARCA` LIKE :marca";
-    $params_reporte[':marca'] = "%$filtro_marca%";
+if (!empty($filtro_marca)) {$sql_reporte .= " AND `MARCA` LIKE :marca";
+    $params_reporte[':marca'] = "\%$filtro_marca%";
 }
 
 $stmt_reporte = $pdo->prepare($sql_reporte);
 $stmt_reporte->execute($params_reporte);
-$reportes = $stmt_reporte->fetchAll();
+$reportes =$stmt_reporte->fetchAll();
 
 $reporte_total = count($reportes);
 
 $sql_kpi_ad = "SELECT COUNT(*) FROM equipos WHERE `ACTIVE DIRECTORY` = 'SI'";
 $sql_kpi_az = "SELECT COUNT(*) FROM equipos WHERE `CLIENTE AZURE` = 'SI'";
 
-if (!empty($filtro_marca)) {
-    $sql_kpi_ad .= " AND `MARCA` LIKE :marca";
+if (!empty($filtro_marca)) {$sql_kpi_ad .= " AND `MARCA` LIKE :marca";
     $sql_kpi_az .= " AND `MARCA` LIKE :marca";
 }
 
-$stmt_ad = $pdo->prepare($sql_kpi_ad);
-$stmt_az = $pdo->prepare($sql_kpi_az);
+$stmt_ad =$pdo->prepare($sql_kpi_ad);$stmt_az = $pdo->prepare($sql_kpi_az);
 if (!empty($filtro_marca)) {
-    $stmt_ad->execute([':marca' => "%$filtro_marca%"]);
-    $stmt_az->execute([':marca' => "%$filtro_marca%"]);
+    $stmt_ad->execute([':marca' => "\%$filtro_marca%"]);
+    $stmt_az->execute([':marca' => "\%$filtro_marca%"]);
 } else {
-    $stmt_ad->execute();
-    $stmt_az->execute();
+    $stmt_ad->execute();$stmt_az->execute();
 }
 
-$reporte_ad_si = $stmt_ad->fetchColumn();
-$reporte_azure_si = $stmt_az->fetchColumn();
+$reporte_ad_si =$stmt_ad->fetchColumn();
+$reporte_azure_si =$stmt_az->fetchColumn();
 
-$resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
+$resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -865,13 +859,20 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                 <h3 class="fw-bold m-0" style="color: var(--brand-primary);">Inventario y Control QR</h3>
                 <p class="text-muted small m-0">Administración de equipos tecnológicos activos y generación de etiquetas.</p>
             </div>
+            <?php if (tienePermiso('crear_equipos')) { ?>
             <button class="btn btn-gsb-primary" data-bs-toggle="modal" data-bs-target="#modalRegistrar"><i class="bi bi-plus-lg me-1"></i> Alta de Equipos / Excel</button>
+            <?php } ?>
         </div>
 
         <?php if(isset($_GET['status'])) { 
             if ($_GET['status'] == 'deleted') { ?>
                 <div class="alert alert-gsb-danger alert-dismissible fade show border-0 shadow-sm" role="alert">
                     <i class="bi bi-trash-fill me-2"></i><strong>Activo Eliminado:</strong> El registro seleccionado ha sido borrado de la base de datos de manera definitiva.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php } elseif ($_GET['status'] == 'denied') { ?>
+                <div class="alert alert-gsb-danger alert-dismissible fade show border-0 shadow-sm" role="alert">
+                    <i class="bi bi-shield-lock-fill me-2"></i><strong>Acceso denegado:</strong> Tu rol no tiene permiso para realizar esa acción.
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             <?php } elseif ($_GET['status'] == 'updated') { ?>
@@ -952,6 +953,7 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                                 echo "<td class='text-center'>";
                                 echo "  <div class='d-flex justify-content-center gap-1'>";
                                 echo "    <button type='button' class='btn btn-light btn-sm rounded-circle text-info' data-bs-toggle='collapse' data-bs-target='#info_{$id}' aria-expanded='false' title='Ver Detalles'><i class='bi bi-eye-fill'></i></button>";
+                                if (tienePermiso('editar')) {
                                 echo "    <button type='button' class='btn btn-light btn-sm rounded-circle btn-editar' style='color: var(--brand-primary)' title='Editar'
                                             data-id='{$id}'
                                             data-marca='{$esc($marca)}'
@@ -977,8 +979,11 @@ $resultado_equipos = $pdo->query("SELECT * FROM equipos")->fetchAll();
                                             data-observaciones2='{$esc($observaciones2)}'
                                             data-cargador='{$esc($cargador)}'
                                             data-cliente_azure='{$esc($cliente_azure)}'><i class='bi bi-pencil-fill'></i></button>";
+                                }
                                 echo "    <a href='generar_responsiva.php?id=$id' target='_blank' class='btn btn-light btn-sm rounded-circle' style='color: var(--brand-primary)' title='Carta Responsiva PDF'><i class='bi bi-file-earmark-pdf-fill'></i></a>";
+                                if (tienePermiso('borrar')) {
                                 echo "    <button onclick='confirmarEliminar($id, \"" . $esc($hostname) . "\")' class='btn btn-light btn-sm rounded-circle text-danger' title='Eliminar'><i class='bi bi-trash-fill'></i></button>";
+                                }
                                 echo "  </div>";
                                 echo "</td>";
 
@@ -1578,7 +1583,16 @@ function descargarQR(contenedorId, hostname) {
 // 4. CONFIRMAR ELIMINACIÓN DE REGISTRO
 function confirmarEliminar(id, hostname) {
     if (confirm('¿Estás seguro de que deseas eliminar el equipo "' + hostname + '" (ID: ' + id + ')? Esta acción no se puede deshacer.')) {
-        window.location.href = 'index.php?vista=registro&accion=eliminar&id=' + id;
+        const f = document.createElement('form');
+        f.method = 'POST';
+        f.action = 'index.php?vista=registro';
+        [['accion_eliminar', '1'], ['id', id]].forEach(([n, v]) => {
+            const i = document.createElement('input');
+            i.type = 'hidden'; i.name = n; i.value = v;
+            f.appendChild(i);
+        });
+        document.body.appendChild(f);
+        f.submit();
     }
 }
 </script>

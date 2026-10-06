@@ -254,10 +254,10 @@ $rol_actual     = ucfirst($rol_actual_raw);
     <nav class="navbar navbar-expand navbar-light navbar-minimal p-0">
         <div class="container-fluid p-0">
             <div class="d-flex align-items-center gap-3">
-                <div class="d-flex align-items-center gap-2 fw-bold text-dark fs-5">
+                <a href="index.php?vista=dashboard" class="d-flex align-items-center gap-2 fw-bold text-dark fs-5 text-decoration-none">
                     <div class="green-icon-badge"><i class="bi bi-shield-check"></i></div>
                     <span>GSB Corp</span>
-                </div>
+                </a>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-pill">

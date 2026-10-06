@@ -6,10 +6,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (ob_get_length()) ob_clean();
     header('Content-Type: application/json; charset=utf-8');
 
-    $host     = "localhost";      
-    $user     = "root";           
-    $password = "";    
-    $database = "proyecto"; 
+    $host     = "localhost";
+    $user     = "root";
+    $password = "";
+    $database = "proyecto";
 
     mysqli_report(MYSQLI_REPORT_OFF);
     $conn = @new mysqli($host, $user, $password, $database);
@@ -24,13 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $usuario_input  = trim($_POST['usuario'] ?? '');
     $password_input = trim($_POST['password'] ?? '');
 
-    if (empty($usuario_input) || empty($password_input)) {
+    if ($usuario_input === '' || $password_input === '') {
         echo json_encode(["status" => "error", "message" => "Por favor llena todos los campos."]);
         exit();
     }
 
-    // Consulta de usuario
-    $sql = "SELECT * FROM usuarios WHERE LOWER(usuario) = LOWER(?)";
+    // Usuario + su rol real desde la tabla roles
+    $sql = "SELECT u.id, u.usuario, u.nombre, u.password, r.nombre AS rol_nombre
+            FROM usuarios u
+            LEFT JOIN roles r ON u.rol_id = r.id
+            WHERE LOWER(u.usuario) = LOWER(?)
+            LIMIT 1";
     $stmt = $conn->prepare($sql);
 
     if (!$stmt) {
@@ -41,34 +45,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->bind_param("s", $usuario_input);
     $stmt->execute();
     $result = $stmt->get_result();
+    $user   = $result->fetch_assoc();
+    $stmt->close();
 
-    if ($user = $result->fetch_assoc()) {
-        if ($password_input === $user['password']) {
-            $_SESSION['id_usuario'] = $user['id'] ?? 1;
-            $_SESSION['usuario']    = $user['usuario'];
-            $_SESSION['nombre']     = $user['nombre'] ?? $user['usuario'];
+    $clave_valida = false;
 
-            $user_lower = strtolower(trim($user['usuario']));
+    if ($user) {
+        $guardada = (string) $user['password'];
+        $info     = password_get_info($guardada);
 
-            // Asignación estricta de rol y redirección según el nombre de usuario
-            if ($user_lower === 'superadmin') {
-                $rol_detectado = 'superadmin';
-                $redirect = "superadmin_panel.php";
-            } else {
-                // Para 'admin' y cualquier otro usuario del sistema
-                $rol_detectado = 'admin';
-                $redirect = "inicio.php";
+        if ($info['algo'] !== null && $info['algo'] !== 0) {
+            // Contraseña ya encriptada (bcrypt)
+            $clave_valida = password_verify($password_input, $guardada);
+        } else {
+            // Contraseña antigua en texto plano: se acepta UNA vez y se convierte a hash
+            $clave_valida = hash_equals($guardada, $password_input);
+
+            if ($clave_valida) {
+                // Solo migrar si la columna es lo bastante larga para guardar un hash (60 caracteres)
+                $q = $conn->prepare("SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+                                     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'password'");
+                $q->bind_param("s", $database);
+                $q->execute();
+                $col = $q->get_result()->fetch_assoc();
+                $q->close();
+
+                if ($col && (int) $col['CHARACTER_MAXIMUM_LENGTH'] >= 60) {
+                    $nuevo_hash = password_hash($password_input, PASSWORD_BCRYPT);
+                    $up = $conn->prepare("UPDATE usuarios SET password = ? WHERE id = ?");
+                    $up->bind_param("si", $nuevo_hash, $user['id']);
+                    $up->execute();
+                    $up->close();
+                }
             }
+        }
+    }
 
-            $_SESSION['rol'] = $rol_detectado;
+    if ($user && $clave_valida) {
+        // Normalizar el rol que viene de la BD ('solo_ver' se trata como 'lector')
+        $rol = strtolower(trim((string) $user['rol_nombre']));
+        if ($rol === 'solo_ver') {
+            $rol = 'lector';
+        }
 
-            echo json_encode([
-                "status"   => "success", 
-                "message"  => "Inicio de sesión correcto", 
-                "redirect" => $redirect
-            ]);
+        $roles_validos = ['superadmin', 'admin', 'soporte', 'lector'];
+        if (!in_array($rol, $roles_validos, true)) {
+            echo json_encode(["status" => "error", "message" => "Tu usuario no tiene un rol válido asignado. Contacta al administrador."]);
             exit();
         }
+
+        session_regenerate_id(true);
+
+        $_SESSION['usuario_id'] = $user['id'];
+        $_SESSION['id_usuario'] = $user['id'];
+        $_SESSION['usuario']    = $user['usuario'];
+        $_SESSION['nombre']     = $user['nombre'] ?? $user['usuario'];
+        $_SESSION['rol']        = $rol;
+        $_SESSION['rol_nombre'] = $rol;
+
+        $redirect = ($rol === 'superadmin') ? "superadmin_panel.php" : "inicio.php";
+
+        echo json_encode([
+            "status"   => "success",
+            "message"  => "Inicio de sesión correcto",
+            "redirect" => $redirect
+        ]);
+        exit();
     }
 
     echo json_encode(["status" => "error", "message" => "Usuario o contraseña incorrectos."]);
