@@ -1,4 +1,12 @@
 <?php
+// Cookie de sesión más segura: no accesible desde JavaScript y no se envía desde otros sitios
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path'     => '/',
+    'httponly' => true,
+    'samesite' => 'Lax',
+    'secure'   => !empty($_SERVER['HTTPS']),
+]);
 session_start();
 
 // Si se recibe una petición POST (autenticación)
@@ -6,10 +14,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (ob_get_length()) ob_clean();
     header('Content-Type: application/json; charset=utf-8');
 
-    $host     = "localhost";
-    $user     = "root";
-    $password = "";
-    $database = "proyecto";
+    require_once __DIR__ . '/config_db.php';
+    $host     = DB_HOST;
+    $user     = DB_USER;
+    $password = DB_PASS;
+    $database = DB_NAME;
 
     mysqli_report(MYSQLI_REPORT_OFF);
     $conn = @new mysqli($host, $user, $password, $database);
@@ -27,6 +36,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($usuario_input === '' || $password_input === '') {
         echo json_encode(["status" => "error", "message" => "Por favor llena todos los campos."]);
         exit();
+    }
+
+    // ---- Límite de intentos fallidos (usa la tabla login_intentos) ----
+    $ip             = substr($_SERVER['REMOTE_ADDR'] ?? '', 0, 45);
+    $usuario_clave  = strtolower($usuario_input);
+    $throttle_activo = false;
+
+    $q = $conn->prepare("SELECT SUM(usuario = ?) AS por_usuario, SUM(ip = ?) AS por_ip
+                         FROM login_intentos WHERE creado > (NOW() - INTERVAL 15 MINUTE)");
+    if ($q) {
+        $throttle_activo = true;
+        $q->bind_param("ss", $usuario_clave, $ip);
+        $q->execute();
+        $conteo = $q->get_result()->fetch_assoc();
+        $q->close();
+
+        if ((int)($conteo['por_usuario'] ?? 0) >= 5 || (int)($conteo['por_ip'] ?? 0) >= 20) {
+            echo json_encode(["status" => "error", "message" => "Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo."]);
+            exit();
+        }
     }
 
     // Usuario + su rol real desde la tabla roles
@@ -88,10 +117,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $rol = 'lector';
         }
 
-        $roles_validos = ['superadmin', 'admin', 'soporte', 'lector'];
+        $roles_validos = ['superadmin', 'admin', 'soporte', 'lector', 'empleado'];
         if (!in_array($rol, $roles_validos, true)) {
             echo json_encode(["status" => "error", "message" => "Tu usuario no tiene un rol válido asignado. Contacta al administrador."]);
             exit();
+        }
+
+        // Login correcto: se borran los intentos fallidos de ese usuario
+        if ($throttle_activo) {
+            $del = $conn->prepare("DELETE FROM login_intentos WHERE usuario = ?");
+            if ($del) {
+                $del->bind_param("s", $usuario_clave);
+                $del->execute();
+                $del->close();
+            }
         }
 
         session_regenerate_id(true);
@@ -112,6 +151,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         exit();
     }
+
+    // Login fallido: se registra el intento y se frena un poco al atacante
+    if ($throttle_activo) {
+        $ins = $conn->prepare("INSERT INTO login_intentos (usuario, ip) VALUES (?, ?)");
+        if ($ins) {
+            $ins->bind_param("ss", $usuario_clave, $ip);
+            $ins->execute();
+            $ins->close();
+        }
+        $conn->query("DELETE FROM login_intentos WHERE creado < (NOW() - INTERVAL 1 DAY)");
+    }
+    usleep(random_int(300000, 600000));
 
     echo json_encode(["status" => "error", "message" => "Usuario o contraseña incorrectos."]);
     exit();

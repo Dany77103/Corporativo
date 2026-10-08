@@ -13,10 +13,11 @@ if (!isset($_SESSION['usuario']) || !tienePermiso('ver')) {
 // ==========================================
 // CONEXIÓN A LA BASE DE DATOS (PDO)
 // ==========================================
-$host     = "localhost";      
-$user     = "root";           
-$password = "";    
-$database = "proyecto"; 
+require_once __DIR__ . '/config_db.php';
+$host     = DB_HOST;
+$user     = DB_USER;
+$password = DB_PASS;
+$database = DB_NAME;
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $user,$password, [
@@ -25,7 +26,111 @@ try {
         PDO::ATTR_EMULATE_PREPARES   => false,
     ]);
 } catch (PDOException $e) {
-    die("Error de conexión a la base de datos: " . $e->getMessage());
+    error_log("Error de conexión a la base de datos: " . $e->getMessage());
+    die("No se pudo conectar con la base de datos.");
+}
+
+// Devuelve el id de la cuenta si existe y es de un Empleado; si no, NULL
+function cuentaAsignadaValida(PDO $pdo, $valor) {
+    $idCuenta = (int)$valor;
+    if ($idCuenta <= 0) {
+        return null;
+    }
+    $st = $pdo->prepare("SELECT u.id FROM usuarios u INNER JOIN roles r ON u.rol_id = r.id
+                         WHERE u.id = :id AND LOWER(r.nombre) = 'empleado'");
+    $st->execute([':id' => $idCuenta]);
+    return $st->fetch() ? $idCuenta : null;
+}
+
+// Cuentas de Empleado disponibles para asignar a un equipo
+$cuentas = $pdo->query("SELECT u.id, u.nombre, u.usuario FROM usuarios u
+                        INNER JOIN roles r ON u.rol_id = r.id
+                        WHERE LOWER(r.nombre) = 'empleado' ORDER BY u.nombre")->fetchAll();
+
+// ==========================================
+// VALIDACIÓN DE EQUIPOS (límites reales de la tabla `equipos`)
+// formato: campo => [etiqueta, largo máximo en caracteres, obligatorio]
+// OBSERVACIONES / OBSERVACIONES2 son TEXT (65 535 bytes): 16 000 caracteres siempre caben.
+// ==========================================
+$LIMITES_EQUIPO = [
+    'marca'          => ['MARCA',             100,   true],
+    'modelo'         => ['MODELO',            100,   true],
+    'sn'             => ['S/N',               100,   true],
+    'sistema_op'     => ['SISTEMA OPERATIVO', 150,   false],
+    'arquitectura'   => ['ARQUITECTURA',      100,   false],
+    'hostname'       => ['HOSTNAME',          100,   true],
+    'procesador'     => ['PROCESADOR',        255,   false],
+    'ram'            => ['RAM',               50,    false],
+    'grafico'        => ['GRAFICO',           100,   false],
+    'disco_mecanico' => ['DISCO MECANICO',    100,   false],
+    'disco_ssd'      => ['DISCO SSD',         100,   false],
+    'mac'            => ['MAC',               100,   false],
+    'observaciones'  => ['OBSERVACIONES',     16000, false],
+    'asignacion_gsb' => ['ASIGNACION GSB',    100,   false],
+    'pais'           => ['PAIS',              100,   true],
+    'ciudad'         => ['CIUDAD',            100,   true],
+    'asignacion_vp'  => ['ASIGNACION VP',     100,   false],
+    'act_directory'  => ['ACTIVE DIRECTORY',  50,    false],
+    'mfa'            => ['MFA',               50,    false],
+    'usuario'        => ['USUARIO ACTUAL',    150,   false],
+    'observaciones2' => ['OBSERVACIONES2',    16000, false],
+    'cargador'       => ['CARGADOR',          150,   false],
+    'cliente_azure'  => ['CLIENTE AZURE',     50,    false],
+];
+
+// Limpia y valida los datos de un equipo. Devuelve el arreglo limpio o NULL (y el motivo en $error)
+function validarEquipo(array $datos, array $limites, &$error) {
+    $limpios = [];
+    foreach ($limites as $campo => $cfg) {
+        list($etiqueta, $max, $obligatorio) = $cfg;
+        $valor = trim((string)($datos[$campo] ?? ''));
+        if ($max <= 255) {
+            // Campos de una línea: se colapsan espacios repetidos ("Windows 11  Pro" -> "Windows 11 Pro")
+            $normalizado = preg_replace('/\s+/u', ' ', $valor);
+            if ($normalizado !== null) {
+                $valor = $normalizado;
+            }
+        }
+        if ($obligatorio && $valor === '') {
+            $error = "El campo $etiqueta es obligatorio.";
+            return null;
+        }
+        if (mb_strlen($valor, 'UTF-8') > $max) {
+            $error = "El campo $etiqueta no puede pasar de $max caracteres.";
+            return null;
+        }
+        $limpios[$campo] = $valor;
+    }
+    return $limpios;
+}
+
+// Los selects de país y ciudad se llaman PAIS y CIUDAD en el formulario
+function datosEquipoPost() {
+    $d = $_POST;
+    $d['pais']   = $_POST['PAIS'] ?? '';
+    $d['ciudad'] = $_POST['CIUDAD'] ?? '';
+    return $d;
+}
+
+function paramsEquipo(array $v) {
+    $p = [];
+    foreach ($v as $campo => $valor) {
+        $p[':' . $campo] = $valor;
+    }
+    return $p;
+}
+
+function redirigirErrorEquipo($mensaje) {
+    $_SESSION['error_equipo'] = $mensaje;
+    header("Location: index.php?vista=registro&status=invalid");
+    exit();
+}
+
+function mensajeErrorEquipo(PDOException $e) {
+    if ((int)($e->errorInfo[1] ?? 0) === 1062) {
+        return 'Ya existe un equipo con ese S/N.';
+    }
+    return 'No se pudo guardar el registro en la base de datos.';
 }
 
 // --- LÓGICA: ELIMINAR REGISTRO (solo por POST y con permiso 'borrar') ---
@@ -48,6 +153,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_editar'])) {
         header("Location: index.php?vista=registro&status=denied");
         exit();
     }
+    $v = validarEquipo(datosEquipoPost(), $LIMITES_EQUIPO, $errorEquipo);
+    if ($v === null) {
+        redirigirErrorEquipo($errorEquipo);
+    }
+
     $sql = "UPDATE equipos SET 
                 `MARCA` = :marca, `MODELO` = :modelo, `S/N` = :sn, 
                 `SISTEMA OPERATIVO` = :sistema_op, `ARQUITECTURA` = :arquitectura, 
@@ -56,39 +166,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_editar'])) {
                 `MAC` = :mac, `OBSERVACIONES` = :observaciones, `ASIGNACION GSB` = :asignacion_gsb, 
                 `PAIS` = :pais, `CIUDAD` = :ciudad, `ASIGNACION VP` = :asignacion_vp, 
                 `ACTIVE DIRECTORY` = :act_directory, `MFA` = :mfa, `USUARIO ACTUAL` = :usuario, 
-                `OBSERVACIONES2` = :observaciones2, `CARGADOR` = :cargador, `CLIENTE AZURE` = :cliente_azure
+                `OBSERVACIONES2` = :observaciones2, `CARGADOR` = :cargador, `CLIENTE AZURE` = :cliente_azure, `cuenta_id` = :cuenta_id
             WHERE id = :id";
-            
-    $stmt =$pdo->prepare($sql);$params = [
-        ':marca'          => trim($_POST['marca'] ?? ''),
-        ':modelo'         => trim($_POST['modelo'] ?? ''),
-        ':sn'             => trim($_POST['sn'] ?? ''),
-        ':sistema_op'     => trim($_POST['sistema_op'] ?? ''),
-        ':arquitectura'   => trim($_POST['arquitectura'] ?? ''),
-        ':hostname'       => trim($_POST['hostname'] ?? ''),
-        ':procesador'     => trim($_POST['procesador'] ?? ''),
-        ':ram'            => trim($_POST['ram'] ?? ''),
-        ':grafico'        => trim($_POST['grafico'] ?? ''),
-        ':disco_mecanico' => trim($_POST['disco_mecanico'] ?? ''),
-        ':disco_ssd'      => trim($_POST['disco_ssd'] ?? ''),
-        ':mac'            => trim($_POST['mac'] ?? ''),
-        ':observaciones'  => trim($_POST['observaciones'] ?? ''),
-        ':asignacion_gsb' => trim($_POST['asignacion_gsb'] ?? ''),
-        ':pais'           => trim($_POST['PAIS'] ?? ''),
-        ':ciudad'         => trim($_POST['CIUDAD'] ?? ''),
-        ':asignacion_vp'  => trim($_POST['asignacion_vp'] ?? ''),
-        ':act_directory'  => trim($_POST['act_directory'] ?? ''),
-        ':mfa'            => trim($_POST['mfa'] ?? ''),
-        ':usuario'        => trim($_POST['usuario'] ?? ''),
-        ':observaciones2' => trim($_POST['observaciones2'] ?? ''),
-        ':cargador'       => trim($_POST['cargador'] ?? ''),
-        ':cliente_azure'  => trim($_POST['cliente_azure'] ?? ''),
-        ':id'             => intval($_POST['id'])
-    ];
 
-    if ($stmt->execute($params)) {
-        header("Location: index.php?vista=registro&status=updated");
-        exit();
+    $params = paramsEquipo($v);
+    $params[':cuenta_id'] = cuentaAsignadaValida($pdo, $_POST['cuenta_id'] ?? 0);
+    $params[':id']        = intval($_POST['id'] ?? 0);
+
+    try {
+        $stmt = $pdo->prepare($sql);
+        if ($stmt->execute($params)) {
+            header("Location: index.php?vista=registro&status=updated");
+            exit();
+        }
+    } catch (PDOException $e) {
+        redirigirErrorEquipo(mensajeErrorEquipo($e));
     }
 }
 
@@ -98,47 +190,34 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_registrar'])) 
         header("Location: index.php?vista=registro&status=denied");
         exit();
     }
+    $v = validarEquipo(datosEquipoPost(), $LIMITES_EQUIPO, $errorEquipo);
+    if ($v === null) {
+        redirigirErrorEquipo($errorEquipo);
+    }
+
     $sql = "INSERT INTO equipos (
                 `MARCA`, `MODELO`, `S/N`, `SISTEMA OPERATIVO`, `ARQUITECTURA`, `HOSTNAME`, 
                 `PROCESADOR`, `RAM`, `GRAFICO`, `DISCO MECANICO`, `DISCO SSD`, `MAC`, 
                 `OBSERVACIONES`, `ASIGNACION GSB`, `PAIS`, `CIUDAD`, `ASIGNACION VP`, 
-                `ACTIVE DIRECTORY`, `MFA`, `USUARIO ACTUAL`, `OBSERVACIONES2`, `CARGADOR`, `CLIENTE AZURE`
+                `ACTIVE DIRECTORY`, `MFA`, `USUARIO ACTUAL`, `OBSERVACIONES2`, `CARGADOR`, `CLIENTE AZURE`, `cuenta_id`
             ) VALUES (
                 :marca, :modelo, :sn, :sistema_op, :arquitectura, :hostname, 
                 :procesador, :ram, :grafico, :disco_mecanico, :disco_ssd, :mac, 
                 :observaciones, :asignacion_gsb, :pais, :ciudad, :asignacion_vp, 
-                :act_directory, :mfa, :usuario, :observaciones2, :cargador, :cliente_azure
+                :act_directory, :mfa, :usuario, :observaciones2, :cargador, :cliente_azure, :cuenta_id
             )";
-            
-    $stmt =$pdo->prepare($sql);$params = [
-        ':marca'          => trim($_POST['marca'] ?? ''),
-        ':modelo'         => trim($_POST['modelo'] ?? ''),
-        ':sn'             => trim($_POST['sn'] ?? ''),
-        ':sistema_op'     => trim($_POST['sistema_op'] ?? ''),
-        ':arquitectura'   => trim($_POST['arquitectura'] ?? ''),
-        ':hostname'       => trim($_POST['hostname'] ?? ''),
-        ':procesador'     => trim($_POST['procesador'] ?? ''),
-        ':ram'            => trim($_POST['ram'] ?? ''),
-        ':grafico'        => trim($_POST['grafico'] ?? ''),
-        ':disco_mecanico' => trim($_POST['disco_mecanico'] ?? ''),
-        ':disco_ssd'      => trim($_POST['disco_ssd'] ?? ''),
-        ':mac'            => trim($_POST['mac'] ?? ''),
-        ':observaciones'  => trim($_POST['observaciones'] ?? ''),
-        ':asignacion_gsb' => trim($_POST['asignacion_gsb'] ?? ''),
-        ':pais'           => trim($_POST['PAIS'] ?? ''),
-        ':ciudad'         => trim($_POST['CIUDAD'] ?? ''),
-        ':asignacion_vp'  => trim($_POST['asignacion_vp'] ?? ''),
-        ':act_directory'  => trim($_POST['act_directory'] ?? ''),
-        ':mfa'            => trim($_POST['mfa'] ?? ''),
-        ':usuario'        => trim($_POST['usuario'] ?? ''),
-        ':observaciones2' => trim($_POST['observaciones2'] ?? ''),
-        ':cargador'       => trim($_POST['cargador'] ?? ''),
-        ':cliente_azure'  => trim($_POST['cliente_azure'] ?? '')
-    ];
 
-    if ($stmt->execute($params)) {
-        header("Location: index.php?vista=registro&status=success");
-        exit();
+    $params = paramsEquipo($v);
+    $params[':cuenta_id'] = cuentaAsignadaValida($pdo, $_POST['cuenta_id'] ?? 0);
+
+    try {
+        $stmt = $pdo->prepare($sql);
+        if ($stmt->execute($params)) {
+            header("Location: index.php?vista=registro&status=success");
+            exit();
+        }
+    } catch (PDOException $e) {
+        redirigirErrorEquipo(mensajeErrorEquipo($e));
     }
 }
 
@@ -154,6 +233,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
         $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
         
         $headers = [];$filas_datos = [];
+        $guardados = 0;
+        $omitidos = [];
 
         if ($extension === 'xlsx') {
             if (!file_exists('SimpleXLSX.php')) {
@@ -245,54 +326,77 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
                 `ACTIVE DIRECTORY`, `MFA`, `USUARIO ACTUAL`, `OBSERVACIONES2`, `CARGADOR`, `CLIENTE AZURE`
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-            $guardados = 0;
+            // campo del sistema => posición de la columna en el archivo
+            $campos_csv = [
+                'marca'          => $pos['MARCA'],
+                'modelo'         => $pos['MODELO'],
+                'sn'             => $pos['S_N'],
+                'sistema_op'     => $pos['SISTEMA_OP'],
+                'arquitectura'   => $pos['ARQUITECTURA'],
+                'hostname'       => $pos['HOSTNAME'],
+                'procesador'     => $pos['PROCESADOR'],
+                'ram'            => $pos['RAM'],
+                'grafico'        => $pos['GRAFICO'],
+                'disco_mecanico' => $pos['DISCO_MECANICO'],
+                'disco_ssd'      => $pos['DISCO_SSD'],
+                'mac'            => $pos['MAC'],
+                'observaciones'  => $pos_observaciones_1,
+                'asignacion_gsb' => $pos['ASIGNACION_GSB'],
+                'pais'           => $pos['PAIS'],
+                'ciudad'         => $pos['CIUDAD'],
+                'asignacion_vp'  => $pos['ASIGNACION_VP'],
+                'act_directory'  => $pos['ACTIVE_DIRECTORY'],
+                'mfa'            => $pos['MFA'],
+                'usuario'        => $pos['USUARIO_ACTUAL'],
+                'observaciones2' => $pos_observaciones_2,
+                'cargador'       => $pos['CARGADOR'],
+                'cliente_azure'  => $pos['CLIENTE_AZURE'],
+            ];
 
-            foreach ($filas_datos as$data) {
+            foreach ($filas_datos as $nFila => $data) {
                 $data = array_map(function($d) {
-                    return mb_convert_encoding($d, "UTF-8", "UTF-8, ISO-8859-1, Windows-1252");
+                    return mb_convert_encoding((string)$d, "UTF-8", "UTF-8, ISO-8859-1, Windows-1252");
                 }, $data);
 
                 if (empty($data) || count(array_filter($data)) <= 1) {
                     continue;
                 }
 
-                $getVal = function($index) use ($data) {
-                    return ($index !== false && isset($data[$index])) ? trim($data[$index]) : '';
-                };
+                $fila = [];
+                foreach ($campos_csv as $campo => $indice) {
+                    $fila[$campo] = ($indice !== false && isset($data[$indice])) ? trim($data[$indice]) : '';
+                }
 
-                $hostname = $getVal($pos['HOSTNAME']);
+                // Misma validación que el formulario: obligatorios y largos máximos
+                $v = validarEquipo($fila, $LIMITES_EQUIPO, $errFila);
+                if ($v === null) {
+                    $omitidos[] = "Fila " . ($nFila + 2) . ": " . $errFila;
+                    continue;
+                }
 
-                if (!empty($hostname)) {
-                    $rowParams = [$getVal($pos['MARCA']),$getVal($pos['MODELO']),$getVal($pos['S_N']),$getVal($pos['SISTEMA_OP']),$getVal($pos['ARQUITECTURA']),$hostname,
-                        $getVal($pos['PROCESADOR']),
-                        $getVal($pos['RAM']),
-                        $getVal($pos['GRAFICO']),
-                        $getVal($pos['DISCO_MECANICO']),
-                        $getVal($pos['DISCO_SSD']),
-                        $getVal($pos['MAC']),
-                        $getVal($pos_observaciones_1),
-                        $getVal($pos['ASIGNACION_GSB']),
-                        $getVal($pos['PAIS']),
-                        $getVal($pos['CIUDAD']),
-                        $getVal($pos['ASIGNACION_VP']),
-                        $getVal($pos['ACTIVE_DIRECTORY']),
-                        $getVal($pos['MFA']),
-                        $getVal($pos['USUARIO_ACTUAL']),
-                        $getVal($pos_observaciones_2),
-                        $getVal($pos['CARGADOR']),
-                        $getVal($pos['CLIENTE_AZURE'])
-                    ];
-
-                    if ($stmtCsv->execute($rowParams)) {$guardados++;
+                try {
+                    if ($stmtCsv->execute(array_values($v))) {
+                        $guardados++;
                     }
+                } catch (PDOException $e) {
+                    $omitidos[] = "Fila " . ($nFila + 2) . ": " . mensajeErrorEquipo($e);
                 }
             }
         }
 
         if ($guardados > 0) {
-            header("Location: index.php?vista=registro&status=success_csv");
+            if (!empty($omitidos)) {
+                $_SESSION['error_equipo'] = "Se importaron $guardados equipos. Se omitieron " . count($omitidos) . " filas. "
+                    . implode(' | ', array_slice($omitidos, 0, 5)) . (count($omitidos) > 5 ? ' ...' : '');
+                header("Location: index.php?vista=registro&status=csv_parcial");
+            } else {
+                header("Location: index.php?vista=registro&status=success_csv");
+            }
         } else {
-            die("<script>alert('ERROR: No se leyeron datos válidos.'); window.location.href='index.php?vista=registro';</script>");
+            $_SESSION['error_equipo'] = !empty($omitidos)
+                ? "No se importó ninguna fila. " . implode(' | ', array_slice($omitidos, 0, 5)) . (count($omitidos) > 5 ? ' ...' : '')
+                : 'No se leyeron datos válidos en el archivo.';
+            header("Location: index.php?vista=registro&status=invalid");
         }
         exit();
     }
@@ -300,32 +404,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['accion_csv'])) {
 
 $vista =$_GET['vista'] ?? 'dashboard';
 
+// Un Empleado solo ve los equipos asignados a su cuenta (valor entero: seguro de concatenar)
+$soloPropios = esSoloPropios();
+$wP = $soloPropios ? " WHERE cuenta_id = " . miCuentaId() : "";   // para consultas sin WHERE
+$aP = $soloPropios ? " AND cuenta_id = " . miCuentaId() : "";     // para consultas con WHERE
+
 // OPTIMIZACIÓN DASHBOARD: Consulta unificada
 $stats =$pdo->query("SELECT 
     COUNT(*) as total,
     SUM(CASE WHEN `MARCA` LIKE '%LENOVO%' THEN 1 ELSE 0 END) as lenovo,
     SUM(CASE WHEN `MARCA` LIKE '%HP%' OR `MARCA` LIKE '%HEWLETT%' THEN 1 ELSE 0 END) as hp
-FROM equipos")->fetch();
+FROM equipos" . $wP)->fetch();
 
 $total_equipos = (int)($stats['total'] ?? 0);
 $total_lenovo  = (int)($stats['lenovo'] ?? 0);
 $total_hp      = (int)($stats['hp'] ?? 0);
 $total_otros   =$total_equipos - ($total_lenovo +$total_hp);
 
-$resMarcas =$pdo->query("SELECT MARCA, COUNT(*) as cantidad FROM equipos GROUP BY MARCA");
+$resMarcas =$pdo->query("SELECT MARCA, COUNT(*) as cantidad FROM equipos" . $wP . " GROUP BY MARCA");
 $marcasLabels = [];$marcasData   = [];
 while ($m = $resMarcas->fetch()) {$marcasLabels[] = $m['MARCA'] ?$m['MARCA'] : 'Sin Especificar';
     $marcasData[]   = (int)$m['cantidad'];
 }
 
-$resSO =$pdo->query("SELECT `SISTEMA OPERATIVO` as so, COUNT(*) as cantidad FROM equipos GROUP BY `SISTEMA OPERATIVO`");
+$resSO =$pdo->query("SELECT `SISTEMA OPERATIVO` as so, COUNT(*) as cantidad FROM equipos" . $wP . " GROUP BY `SISTEMA OPERATIVO`");
 $soLabels = [];$soData   = [];
 while ($s = $resSO->fetch()) {$soLabels[] = $s['so'] ?$s['so'] : 'Desconocido';
     $soData[]   = (int)$s['cantidad'];
 }
 
 // FILTROS DE REPORTES
-$filtro_marca = isset($_GET['f_marca']) ? trim($_GET['f_marca']) : '';$sql_reporte = "SELECT * FROM equipos WHERE 1=1";
+$filtro_marca = isset($_GET['f_marca']) ? trim($_GET['f_marca']) : '';$sql_reporte = "SELECT * FROM equipos WHERE 1=1" . $aP;
 $params_reporte = [];
 
 if (!empty($filtro_marca)) {$sql_reporte .= " AND `MARCA` LIKE :marca";
@@ -338,8 +447,8 @@ $reportes =$stmt_reporte->fetchAll();
 
 $reporte_total = count($reportes);
 
-$sql_kpi_ad = "SELECT COUNT(*) FROM equipos WHERE `ACTIVE DIRECTORY` = 'SI'";
-$sql_kpi_az = "SELECT COUNT(*) FROM equipos WHERE `CLIENTE AZURE` = 'SI'";
+$sql_kpi_ad = "SELECT COUNT(*) FROM equipos WHERE `ACTIVE DIRECTORY` = 'SI'" . $aP;
+$sql_kpi_az = "SELECT COUNT(*) FROM equipos WHERE `CLIENTE AZURE` = 'SI'" . $aP;
 
 if (!empty($filtro_marca)) {$sql_kpi_ad .= " AND `MARCA` LIKE :marca";
     $sql_kpi_az .= " AND `MARCA` LIKE :marca";
@@ -356,7 +465,7 @@ if (!empty($filtro_marca)) {
 $reporte_ad_si =$stmt_ad->fetchColumn();
 $reporte_azure_si =$stmt_az->fetchColumn();
 
-$resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
+$resultado_equipos =$pdo->query("SELECT * FROM equipos" . $wP)->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -740,12 +849,20 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 <li class="nav-item">
                     <a class="nav-link <?php echo ($vista == 'reportes') ? 'active' : ''; ?>" href="index.php?vista=reportes"><i class="bi bi-file-earmark-pdf-fill me-1"></i> Reportes</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="inicio.php"><i class="bi bi-box-arrow-right me-1"></i> Salir</a>
+                </li>
             </ul>
         </div>
     </div>
 </nav>
 
 <div class="container-fluid px-0 px-md-2 mb-3">
+        <?php if ($soloPropios) { ?>
+        <div class="alert alert-info border-0 shadow-sm mb-3">
+            <i class="bi bi-person-badge-fill me-1"></i> Estás viendo únicamente los equipos asignados a tu cuenta (solo lectura).
+        </div>
+        <?php } ?>
 
     <?php if ($vista == 'dashboard') { ?>
         <div class="row mb-4 align-items-center">
@@ -870,6 +987,16 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                     <i class="bi bi-trash-fill me-2"></i><strong>Activo Eliminado:</strong> El registro seleccionado ha sido borrado de la base de datos de manera definitiva.
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
+            <?php } elseif ($_GET['status'] == 'invalid') { ?>
+                <div class="alert alert-gsb-danger alert-dismissible fade show border-0 shadow-sm" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>No se guardó:</strong> <?php echo htmlspecialchars($_SESSION['error_equipo'] ?? 'Revisa los datos del formulario.'); unset($_SESSION['error_equipo']); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php } elseif ($_GET['status'] == 'csv_parcial') { ?>
+                <div class="alert alert-warning alert-dismissible fade show border-0 shadow-sm" role="alert">
+                    <i class="bi bi-exclamation-circle-fill me-2"></i><?php echo htmlspecialchars($_SESSION['error_equipo'] ?? 'La importación se completó parcialmente.'); unset($_SESSION['error_equipo']); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
             <?php } elseif ($_GET['status'] == 'denied') { ?>
                 <div class="alert alert-gsb-danger alert-dismissible fade show border-0 shadow-sm" role="alert">
                     <i class="bi bi-shield-lock-fill me-2"></i><strong>Acceso denegado:</strong> Tu rol no tiene permiso para realizar esa acción.
@@ -938,6 +1065,7 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                                 $observaciones2= isset($row_upper['OBSERVACIONES2']) ? trim($row_upper['OBSERVACIONES2']) : '';
                                 $cargador      = isset($row_upper['CARGADOR']) ? trim($row_upper['CARGADOR']) : '';
                                 $cliente_azure = isset($row_upper['CLIENTE AZURE']) ? trim($row_upper['CLIENTE AZURE']) : '';
+                                $cuenta_row    = isset($row_upper['CUENTA_ID']) ? trim((string)$row_upper['CUENTA_ID']) : '';
 
                                 $id_valido = (!empty($id) && $id > 0) ? $id : 'fila_' . $index;
                                 $h_str     = !empty($hostname) ? $hostname : 'N/A';
@@ -978,9 +1106,11 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                                             data-usuario='{$esc($usuario_act)}'
                                             data-observaciones2='{$esc($observaciones2)}'
                                             data-cargador='{$esc($cargador)}'
-                                            data-cliente_azure='{$esc($cliente_azure)}'><i class='bi bi-pencil-fill'></i></button>";
+                                            data-cliente_azure='{$esc($cliente_azure)}' data-cuenta_id='{$esc($cuenta_row)}'><i class='bi bi-pencil-fill'></i></button>";
                                 }
+                                if (!$soloPropios) {
                                 echo "    <a href='generar_responsiva.php?id=$id' target='_blank' class='btn btn-light btn-sm rounded-circle' style='color: var(--brand-primary)' title='Carta Responsiva PDF'><i class='bi bi-file-earmark-pdf-fill'></i></a>";
+                                }
                                 if (tienePermiso('borrar')) {
                                 echo "    <button onclick='confirmarEliminar($id, \"" . $esc($hostname) . "\")' class='btn btn-light btn-sm rounded-circle text-danger' title='Eliminar'><i class='bi bi-trash-fill'></i></button>";
                                 }
@@ -1196,51 +1326,51 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Hostname</label>
-                    <input type="text" name="hostname" class="form-control" placeholder="Ej: GSBLMEXW11R66P" required>
+                    <input type="text" name="hostname" class="form-control" placeholder="Ej: GSBLMEXW11R66P" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Marca</label>
-                    <input type="text" name="marca" class="form-control" placeholder="Ej: LENOVO" required>
+                    <input type="text" name="marca" class="form-control" placeholder="Ej: LENOVO" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Modelo</label>
-                    <input type="text" name="modelo" class="form-control" placeholder="Ej: 82C5" required>
+                    <input type="text" name="modelo" class="form-control" placeholder="Ej: 82C5" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Número de Serie (S/N)</label>
-                    <input type="text" name="sn" class="form-control" placeholder="Ej: PF31R66P" required>
+                    <input type="text" name="sn" class="form-control" placeholder="Ej: PF31R66P" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Sistema Operativo</label>
-                    <input type="text" name="sistema_op" class="form-control" placeholder="Ej: Windows 11 Pro">
+                    <input type="text" name="sistema_op" class="form-control" placeholder="Ej: Windows 11 Pro" maxlength="150">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Arquitectura</label>
-                    <input type="text" name="arquitectura" class="form-control" placeholder="Ej: x64">
+                    <input type="text" name="arquitectura" class="form-control" placeholder="Ej: x64" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Procesador</label>
-                    <input type="text" name="procesador" class="form-control" placeholder="Ej: Intel Core i5">
+                    <input type="text" name="procesador" class="form-control" placeholder="Ej: Intel Core i5" maxlength="255">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">RAM</label>
-                    <input type="text" name="ram" class="form-control" placeholder="Ej: 16 GB">
+                    <input type="text" name="ram" class="form-control" placeholder="Ej: 16 GB" maxlength="50">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Gráfico</label>
-                    <input type="text" name="grafico" class="form-control" placeholder="Ej: Intel Iris Xe">
+                    <input type="text" name="grafico" class="form-control" placeholder="Ej: Intel Iris Xe" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Disco Mecánico</label>
-                    <input type="text" name="disco_mecanico" class="form-control" placeholder="Ej: N/A">
+                    <input type="text" name="disco_mecanico" class="form-control" placeholder="Ej: N/A" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Disco SSD</label>
-                    <input type="text" name="disco_ssd" class="form-control" placeholder="Ej: 512 GB">
+                    <input type="text" name="disco_ssd" class="form-control" placeholder="Ej: 512 GB" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">MAC Address</label>
-                    <input type="text" name="mac" class="form-control" placeholder="Ej: AA:BB:CC:DD:EE:FF">
+                    <input type="text" name="mac" class="form-control" placeholder="Ej: AA:BB:CC:DD:EE:FF" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Asignación GSB</label>
@@ -1259,14 +1389,13 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-4 mb-3">
                     <label for="select-ciudad" class="form-label mb-1 small fw-bold text-muted">Ciudad:</label>
-                    <select id="select-ciudad" name="CIUDAD" class="form-select" required>
-                        <option value="">Selecciona una Ciudad</option>
-                    </select>
+                    <input type="text" id="select-ciudad" name="CIUDAD" class="form-control" list="lista-ciudades" maxlength="100" placeholder="Primero elige un país" autocomplete="off" required>
+                    <datalist id="lista-ciudades"></datalist>
                 </div>
 
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Asignación VP</label>
-                    <input type="text" name="asignacion_vp" class="form-control" placeholder="Ej: Dirección">
+                    <input type="text" name="asignacion_vp" class="form-control" placeholder="Ej: Dirección" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Active Directory</label>
@@ -1277,15 +1406,24 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">MFA</label>
-                    <input type="text" name="mfa" class="form-control" placeholder="Ej: Activado">
+                    <input type="text" name="mfa" class="form-control" placeholder="Ej: Activado" maxlength="50">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Usuario Actual</label>
-                    <input type="text" name="usuario" class="form-control" placeholder="Ej: John Doe">
+                    <input type="text" name="usuario" class="form-control" placeholder="Ej: John Doe" maxlength="150">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label mb-1 small fw-bold text-muted">Cuenta de acceso asignada</label>
+                    <select name="cuenta_id"  class="form-select">
+                        <option value="">Sin cuenta asignada</option>
+                        <?php foreach ($cuentas as $c) { ?>
+                        <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['nombre'] . ' (' . $c['usuario'] . ')'); ?></option>
+                        <?php } ?>
+                    </select>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Cargador</label>
-                    <input type="text" name="cargador" class="form-control" placeholder="Ej: USB-C 65W">
+                    <input type="text" name="cargador" class="form-control" placeholder="Ej: USB-C 65W" maxlength="150">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Cliente Azure</label>
@@ -1296,11 +1434,11 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones</label>
-                    <textarea name="observaciones" class="form-control" rows="2" placeholder="Ej: Detalles físicos del equipo..."></textarea>
+                    <textarea name="observaciones" class="form-control" rows="2" placeholder="Ej: Detalles físicos del equipo..." maxlength="16000"></textarea>
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones Adicionales (OBSERVACIONES2)</label>
-                    <textarea name="observaciones2" class="form-control" rows="2" placeholder="Ej: Comentarios extras..."></textarea>
+                    <textarea name="observaciones2" class="form-control" rows="2" placeholder="Ej: Comentarios extras..." maxlength="16000"></textarea>
                 </div>
             </div>
 
@@ -1328,51 +1466,51 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Hostname</label>
-                    <input type="text" name="hostname" id="edit_hostname" class="form-control" required>
+                    <input type="text" name="hostname" id="edit_hostname" class="form-control" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Marca</label>
-                    <input type="text" name="marca" id="edit_marca" class="form-control" required>
+                    <input type="text" name="marca" id="edit_marca" class="form-control" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Modelo</label>
-                    <input type="text" name="modelo" id="edit_modelo" class="form-control" required>
+                    <input type="text" name="modelo" id="edit_modelo" class="form-control" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Número de Serie (S/N)</label>
-                    <input type="text" name="sn" id="edit_sn" class="form-control" required>
+                    <input type="text" name="sn" id="edit_sn" class="form-control" required maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Sistema Operativo</label>
-                    <input type="text" name="sistema_op" id="edit_sistema_op" class="form-control">
+                    <input type="text" name="sistema_op" id="edit_sistema_op" class="form-control" maxlength="150">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Arquitectura</label>
-                    <input type="text" name="arquitectura" id="edit_arquitectura" class="form-control">
+                    <input type="text" name="arquitectura" id="edit_arquitectura" class="form-control" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Procesador</label>
-                    <input type="text" name="procesador" id="edit_procesador" class="form-control">
+                    <input type="text" name="procesador" id="edit_procesador" class="form-control" maxlength="255">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">RAM</label>
-                    <input type="text" name="ram" id="edit_ram" class="form-control">
+                    <input type="text" name="ram" id="edit_ram" class="form-control" maxlength="50">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Gráfico</label>
-                    <input type="text" name="grafico" id="edit_grafico" class="form-control">
+                    <input type="text" name="grafico" id="edit_grafico" class="form-control" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Disco Mecánico</label>
-                    <input type="text" name="disco_mecanico" id="edit_disco_mecanico" class="form-control">
+                    <input type="text" name="disco_mecanico" id="edit_disco_mecanico" class="form-control" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Disco SSD</label>
-                    <input type="text" name="disco_ssd" id="edit_disco_ssd" class="form-control">
+                    <input type="text" name="disco_ssd" id="edit_disco_ssd" class="form-control" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">MAC Address</label>
-                    <input type="text" name="mac" id="edit_mac" class="form-control">
+                    <input type="text" name="mac" id="edit_mac" class="form-control" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Asignación GSB</label>
@@ -1391,14 +1529,13 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-4 mb-3">
                     <label for="edit_ciudad" class="form-label mb-1 small fw-bold text-muted">Ciudad:</label>
-                    <select id="edit_ciudad" name="CIUDAD" class="form-select" required>
-                        <option value="">Selecciona una Ciudad</option>
-                    </select>
+                    <input type="text" id="edit_ciudad" name="CIUDAD" class="form-control" list="lista-ciudades-edit" maxlength="100" autocomplete="off" required>
+                    <datalist id="lista-ciudades-edit"></datalist>
                 </div>
 
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Asignación VP</label>
-                    <input type="text" name="asignacion_vp" id="edit_asignacion_vp" class="form-control">
+                    <input type="text" name="asignacion_vp" id="edit_asignacion_vp" class="form-control" maxlength="100">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Active Directory</label>
@@ -1409,15 +1546,24 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">MFA</label>
-                    <input type="text" name="mfa" id="edit_mfa" class="form-control">
+                    <input type="text" name="mfa" id="edit_mfa" class="form-control" maxlength="50">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Usuario Actual</label>
-                    <input type="text" name="usuario" id="edit_usuario" class="form-control">
+                    <input type="text" name="usuario" id="edit_usuario" class="form-control" maxlength="150">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label mb-1 small fw-bold text-muted">Cuenta de acceso asignada</label>
+                    <select name="cuenta_id" id="edit_cuenta_id" class="form-select">
+                        <option value="">Sin cuenta asignada</option>
+                        <?php foreach ($cuentas as $c) { ?>
+                        <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['nombre'] . ' (' . $c['usuario'] . ')'); ?></option>
+                        <?php } ?>
+                    </select>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Cargador</label>
-                    <input type="text" name="cargador" id="edit_cargador" class="form-control">
+                    <input type="text" name="cargador" id="edit_cargador" class="form-control" maxlength="150">
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Cliente Azure</label>
@@ -1428,11 +1574,11 @@ $resultado_equipos =$pdo->query("SELECT * FROM equipos")->fetchAll();
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones</label>
-                    <textarea name="observaciones" id="edit_observaciones" class="form-control" rows="2"></textarea>
+                    <textarea name="observaciones" id="edit_observaciones" class="form-control" rows="2" maxlength="16000"></textarea>
                 </div>
                 <div class="col-md-12 mb-3">
                     <label class="form-label mb-1 small fw-bold text-muted">Observaciones Adicionales (OBSERVACIONES2)</label>
-                    <textarea name="observaciones2" id="edit_observaciones2" class="form-control" rows="2"></textarea>
+                    <textarea name="observaciones2" id="edit_observaciones2" class="form-control" rows="2" maxlength="16000"></textarea>
                 </div>
             </div>
 
@@ -1524,22 +1670,11 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('edit_observaciones2').value = this.dataset.observaciones2 || '';
             document.getElementById('edit_cargador').value = this.dataset.cargador || '';
             document.getElementById('edit_cliente_azure').value = this.dataset.cliente_azure || 'NO';
+            document.getElementById('edit_cuenta_id').value = this.dataset.cuenta_id || '';
 
-            const paisGuardado = this.dataset.pais || '';
-            const ciudadGuardada = this.dataset.ciudad || '';
-
-            // Disparar evento personalizado si api_ubicaciones.js lo escucha para precargar
-            const editPaisSelect = document.getElementById('edit_pais');
-            if (editPaisSelect) {
-                editPaisSelect.value = paisGuardado;
-                editPaisSelect.dispatchEvent(new Event('change'));
-
-                setTimeout(() => {
-                    const editCiudadSelect = document.getElementById('edit_ciudad');
-                    if (editCiudadSelect) {
-                        editCiudadSelect.value = ciudadGuardada;
-                    }
-                }, 200);
+            // api_ubicaciones.js carga la lista de países, selecciona el guardado y trae sus ciudades
+            if (window.precargarUbicacion) {
+                window.precargarUbicacion('edit_pais', 'edit_ciudad', this.dataset.pais || '', this.dataset.ciudad || '');
             }
 
             const modalEditar = new bootstrap.Modal(document.getElementById('modalEditar'));

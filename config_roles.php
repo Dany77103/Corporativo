@@ -6,6 +6,7 @@ define('ROL_SUPERADMIN', 'superadmin');
 define('ROL_ADMIN',      'admin');
 define('ROL_SOPORTE',    'soporte');
 define('ROL_LECTOR',     'lector');
+define('ROL_EMPLEADO',   'empleado');
 
 /**
  * Matriz de Permisos por Rol:
@@ -13,8 +14,9 @@ define('ROL_LECTOR',     'lector');
  * - editar: Modificar datos de equipos.
  * - borrar: Eliminar registros.
  * - crear_equipos: Dar de alta activos (Manual o Excel).
- * - crear_usuarios: Crear cuentas de nivel admin/soporte/lector.
+ * - crear_usuarios: Crear cuentas de nivel admin/soporte/lector/empleado.
  * - gestionar_admins: Crear o modificar usuarios con rol Superadmin.
+ * - solo_propios: Solo ve los equipos asignados a su propia cuenta (cuenta_id).
  */
 function obtenerPermisosPorRol($rol) {
     // Normalizar la cadena del rol a minúsculas para evitar discordancias
@@ -28,6 +30,7 @@ function obtenerPermisosPorRol($rol) {
             'crear_equipos'    => true,
             'crear_usuarios'   => true,
             'gestionar_admins' => true,
+            'solo_propios'     => false,
         ],
         ROL_ADMIN => [
             'ver'              => true,
@@ -36,6 +39,7 @@ function obtenerPermisosPorRol($rol) {
             'crear_equipos'    => true,
             'crear_usuarios'   => true,
             'gestionar_admins' => false,
+            'solo_propios'     => false,
         ],
         ROL_SOPORTE => [
             'ver'              => true,
@@ -44,6 +48,7 @@ function obtenerPermisosPorRol($rol) {
             'crear_equipos'    => true,
             'crear_usuarios'   => false,
             'gestionar_admins' => false,
+            'solo_propios'     => false,
         ],
         ROL_LECTOR => [
             'ver'              => true,
@@ -52,16 +57,27 @@ function obtenerPermisosPorRol($rol) {
             'crear_equipos'    => false,
             'crear_usuarios'   => false,
             'gestionar_admins' => false,
+            'solo_propios'     => false,
+        ],
+        ROL_EMPLEADO => [
+            'ver'              => true,
+            'editar'           => false,
+            'borrar'           => false,
+            'crear_equipos'    => false,
+            'crear_usuarios'   => false,
+            'gestionar_admins' => false,
+            'solo_propios'     => true,
         ]
     ];
 
     return $permisos[$rol] ?? [
-        'ver'              => false, 
-        'editar'           => false, 
-        'borrar'           => false, 
-        'crear_equipos'    => false, 
-        'crear_usuarios'   => false, 
-        'gestionar_admins' => false
+        'ver'              => false,
+        'editar'           => false,
+        'borrar'           => false,
+        'crear_equipos'    => false,
+        'crear_usuarios'   => false,
+        'gestionar_admins' => false,
+        'solo_propios'     => false
     ];
 }
 
@@ -74,7 +90,7 @@ function tienePermiso($permisoRequerido) {
     }
 
     $permisos = obtenerPermisosPorRol($_SESSION['rol']);
-    
+
     return isset($permisos[$permisoRequerido]) && $permisos[$permisoRequerido] === true;
 }
 
@@ -86,5 +102,19 @@ function requerirPermiso($permisoRequerido) {
         header("Location: index.php?error=acceso_denegado");
         exit();
     }
+}
+
+/**
+ * ¿El usuario solo debe ver los equipos asignados a su cuenta?
+ */
+function esSoloPropios() {
+    return tienePermiso('solo_propios');
+}
+
+/**
+ * ID de la cuenta en sesión (0 si no existe: en ese caso no coincide con ningún equipo).
+ */
+function miCuentaId() {
+    return (int)($_SESSION['usuario_id'] ?? 0);
 }
 ?>

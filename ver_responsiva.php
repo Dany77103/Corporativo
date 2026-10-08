@@ -1,15 +1,17 @@
 <?php
 session_start();
+require_once 'config_roles.php';
 
 if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
 
-$host     = "localhost";      
-$user     = "root";           
-$password = "";    
-$database = "proyecto"; 
+require_once __DIR__ . '/config_db.php';
+$host     = DB_HOST;
+$user     = DB_USER;
+$password = DB_PASS;
+$database = DB_NAME;
 
 $conn = new mysqli($host, $user, $password, $database);
 $conn->set_charset("utf8mb4");
@@ -25,35 +27,47 @@ if ($raw_id && !$conn->connect_error) {
     $hostname = '';
     $sn = '';
 
-    // 2. Extracción de Hostname mediante expresión regular insensible a saltos de línea
-    if (preg_match('/Hostname:\s*([A-Za-z0-9_-]+)/i', $texto_limpio, $matches)) {
+    // 2. Extracción del Hostname: acepta "Host:" (formato del QR) y "Hostname:"
+    if (preg_match('/\bHost(?:name)?:\s*([^|]+?)\s*(?:\||$)/i', $texto_limpio, $matches)) {
         $hostname = trim($matches[1]);
     }
 
-    // 3. Extracción de Número de Serie (S/N)
-    if (preg_match('/S\/N:\s*([A-Za-z0-9_-]+)/i', $texto_limpio, $matches)) {
+    // 3. Extracción del Número de Serie: acepta "SN:" (formato del QR) y "S/N:"
+    if (preg_match('/\b(?:S\/N|SN):\s*([^|]+?)\s*(?:\||$)/i', $texto_limpio, $matches)) {
         $sn = trim($matches[1]);
     }
 
-    // Fallbacks si no detecta las etiquetas exactas
-    $search_host = $hostname ?: 'GSBLMEXW11R66P';
-    $search_sn   = $sn ?: 'PF31R66P2';
+    // "N/A" significa que ese dato estaba vacío en el registro
+    if (strtoupper($hostname) === 'N/A') { $hostname = ''; }
+    if (strtoupper($sn) === 'N/A')       { $sn = ''; }
 
-    // 4. Búsqueda exacta y por coincidencia parcial en la tabla equipos
-    $sql = "SELECT * FROM equipos WHERE 
-            `HOSTNAME` = ? 
-            OR `S/N` = ? 
-            OR `HOSTNAME` LIKE CONCAT('%', ?, '%')
-            OR `S/N` LIKE CONCAT('%', ?, '%')
-            LIMIT 1";
+    // Código sin etiquetas (QR antiguo con solo el serial): se toma el texto completo como S/N
+    if ($hostname === '' && $sn === '' && strpos($texto_limpio, '|') === false && strlen($texto_limpio) <= 100) {
+        $sn = trim($texto_limpio);
+    }
 
-    $stmt = $conn->prepare($sql);
+    // 4. Búsqueda EXACTA: primero por S/N (distinto en cada equipo); si el QR no trae S/N, por hostname.
+    //    Un empleado solo puede consultar equipos asignados a su cuenta.
+    $filtro_propios = esSoloPropios() ? " AND cuenta_id = " . miCuentaId() : "";
+    $sql   = null;
+    $valor = '';
 
-    if ($stmt) {
-        $stmt->bind_param("ssss", $search_host, $search_sn, $search_host, $search_sn);
-        $stmt->execute();
-        $equipo = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    if ($sn !== '') {
+        $sql   = "SELECT * FROM equipos WHERE `S/N` = ?" . $filtro_propios . " LIMIT 1";
+        $valor = $sn;
+    } elseif ($hostname !== '') {
+        $sql   = "SELECT * FROM equipos WHERE `HOSTNAME` = ?" . $filtro_propios . " ORDER BY id ASC LIMIT 1";
+        $valor = $hostname;
+    }
+
+    if ($sql !== null) {
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param("s", $valor);
+            $stmt->execute();
+            $equipo = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+        }
     }
 }
 ?>

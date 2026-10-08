@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once 'config_roles.php';
 
 // 1. Validar que exista sesión activa
 if (!isset($_SESSION['usuario']) || !isset($_SESSION['rol'])) {
@@ -16,7 +17,7 @@ if ($rol_actual_raw === 'superadmin') {
 }
 
 // 3. Validar roles permitidos para la vista de inicio
-$roles_permitidos = ['admin', 'soporte'];
+$roles_permitidos = ['admin', 'soporte', 'lector', 'empleado'];
 
 if (!in_array($rol_actual_raw, $roles_permitidos)) {
     session_unset();
@@ -25,17 +26,22 @@ if (!in_array($rol_actual_raw, $roles_permitidos)) {
     exit();
 }
 
-$host     = "localhost";      
-$user     = "root";           
-$password = "";    
-$database = "proyecto"; 
+require_once __DIR__ . '/config_db.php';
+$host     = DB_HOST;
+$user     = DB_USER;
+$password = DB_PASS;
+$database = DB_NAME;
 
 $conn = new mysqli($host, $user, $password, $database);
 $conn->set_charset("utf8mb4");
 $total_equipos = 0;
 
 if (!$conn->connect_error) {
-    $res = $conn->query("SELECT COUNT(*) as total FROM equipos");
+    $sql_total = "SELECT COUNT(*) as total FROM equipos";
+    if (esSoloPropios()) {
+        $sql_total .= " WHERE cuenta_id = " . miCuentaId();
+    }
+    $res = $conn->query($sql_total);
     if ($res) {
         $total_equipos = $res->fetch_assoc()['total'];
     }

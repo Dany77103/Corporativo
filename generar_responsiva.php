@@ -1,8 +1,9 @@
 <?php
 session_start();
+require_once 'config_roles.php';
 
-// 1. GUARDIÁN DE SEGURIDAD
-if (!isset($_SESSION['usuario']) || $_SESSION['rol'] !== 'admin') {
+// 1. GUARDIÁN DE SEGURIDAD: roles que pueden editar (superadmin, admin, soporte)
+if (!isset($_SESSION['usuario']) || !tienePermiso('editar')) {
     die("Acceso no autorizado.");
 }
 
@@ -14,14 +15,16 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 $id_equipo = intval($_GET['id']);
 
 // 3. CONEXIÓN A LA BASE DE DATOS
-$host     = "localhost";      
-$user     = "root";           
-$password = "";    
-$database = "proyecto"; 
+require_once __DIR__ . '/config_db.php';
+$host     = DB_HOST;
+$user     = DB_USER;
+$password = DB_PASS;
+$database = DB_NAME;
 
 $conn = new mysqli($host, $user, $password, $database);
 if ($conn->connect_error) {
-    die("Error de conexión: " . $conn->connect_error);
+    error_log("Error de conexión: " . $conn->connect_error);
+    die("No se pudo conectar con la base de datos.");
 }
 
 // 4. CONSULTAR DATOS DEL EQUIPO
