@@ -1,39 +1,61 @@
 <?php
 // guardar_usuario.php
-require_once 'db.php'; // Cambia 'db.php' por el nombre exacto de tu archivo de conexión a MySQL
-session_start();
+require_once 'conexion.php';     // Conexión a la base de datos MySQL (PDO)
+require_once 'config_roles.php'; // Matriz de roles y funciones de permisos
 
-// 1. Validar que el usuario que intenta guardar sea Superusuario
-if (!isset($_SESSION['rol_nombre']) || $_SESSION['rol_nombre'] !== 'superadmin') {
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+header('Content-Type: application/json; charset=utf-8');
+
+// ==========================================
+// 1. VALIDACIÓN DE PERMISOS (PUNTO 2)
+// ==========================================
+// Verificar que el usuario tenga sesión activa y permisos para gestionar/crear usuarios
+if (!isset($_SESSION['usuario_id']) || (!tienePermiso('crear_usuarios') && !tienePermiso('gestionar_admins'))) {
     http_response_code(403);
-    echo json_encode(["status" => "error", "mensaje" => "Acceso denegado: Solo el Superusuario puede gestionar usuarios y asignar roles"]);
+    echo json_encode([
+        "status" => "error", 
+        "mensaje" => "Acceso denegado: No tienes permisos para crear o modificar usuarios (modo solo lectura o sin privilegios)."
+    ]);
     exit();
 }
 
-// 2. Capturar y limpiar datos del formulario
-$id = !empty($_POST['id']) ? intval($_POST['id']) : null;
-$usuario = trim($_POST['usuario'] ?? '');
-$nombre = trim($_POST['nombre'] ?? '');
+// ==========================================
+// 2. CAPTURAR Y LIMPIAR DATOS DEL FORMULARIO
+// ==========================================
+$id       = !empty($_POST['id']) ? intval($_POST['id']) : null;
+$usuario  = trim($_POST['usuario'] ?? '');
+$nombre   = trim($_POST['nombre'] ?? '');
 $password = $_POST['password'] ?? '';
-$rol_id = !empty($_POST['rol_id']) ? intval($_POST['rol_id']) : 4; // Rol por defecto: 'solo_ver' (ID 4)
+$rol_id   = !empty($_POST['rol_id']) ? intval($_POST['rol_id']) : 4; // Rol por defecto: 'lector' (ID 4)
 
-// 3. Validación de campos NOT NULL
+// ==========================================
+// 3. VALIDACIÓN DE CAMPOS REQUERIDOS
+// ==========================================
 if (empty($usuario) || empty($nombre) || (is_null($id) && empty($password))) {
     http_response_code(400);
-    echo json_encode(["status" => "error", "mensaje" => "Los campos 'Usuario' y 'Nombre' son obligatorios (NOT NULL)"]);
+    echo json_encode([
+        "status" => "error", 
+        "mensaje" => "Los campos 'Usuario' y 'Nombre' son obligatorios. La contraseña es requerida para usuarios nuevos."
+    ]);
     exit();
 }
 
+// ==========================================
+// 4. PROCESAMIENTO EN BASE DE DATOS
+// ==========================================
 try {
     if ($id) {
-        // ACTUALIZACIÓN DE USUARIOS
+        // ACTUALIZACIÓN DE USUARIO EXISTENTE
         if (!empty($password)) {
-            // Se actualizan todos los datos incluyendo nueva contraseña encriptada
+            // Actualización con nueva contraseña encriptada
             $hash = password_hash($password, PASSWORD_BCRYPT);
             $stmt = $pdo->prepare("UPDATE usuarios SET usuario = ?, nombre = ?, password = ?, rol_id = ? WHERE id = ?");
             $stmt->execute([$usuario, $nombre, $hash, $rol_id, $id]);
         } else {
-            // Se actualizan datos sin cambiar la contraseña
+            // Actualización sin modificar la contraseña
             $stmt = $pdo->prepare("UPDATE usuarios SET usuario = ?, nombre = ?, rol_id = ? WHERE id = ?");
             $stmt->execute([$usuario, $nombre, $rol_id, $id]);
         }

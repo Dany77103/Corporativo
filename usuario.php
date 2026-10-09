@@ -8,6 +8,7 @@ if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
     exit();
 }
+$puedoModificar = tienePermiso('crear_usuarios');
 requerirPermiso('crear_usuarios');
 
 $esSuper = tienePermiso('gestionar_admins');   // Solo el superadmin
@@ -282,6 +283,7 @@ $rolPorDefecto = array_search('lector', $asignables, true);
 
     <div class="row g-4">
         <!-- Formulario Crear / Editar -->
+        <?php if ($puedoModificar): ?>
         <div class="col-lg-4">
             <div class="card card-custom shadow-sm">
                 <h6 class="fw-bold mb-3" style="color: var(--brand-primary);" id="formTitle">
@@ -335,9 +337,10 @@ $rolPorDefecto = array_search('lector', $asignables, true);
                 </form>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Tabla de usuarios -->
-        <div class="col-lg-8">
+        <div class="col-lg-<?php echo $puedoModificar ? '8' : '12'; ?>">
             <div class="card card-custom shadow-sm">
                 <h6 class="fw-bold mb-3" style="color: var(--brand-primary);">
                     <i class="bi bi-list-ul me-1"></i> Usuarios Registrados
@@ -349,7 +352,9 @@ $rolPorDefecto = array_search('lector', $asignables, true);
                                 <th>Nombre</th>
                                 <th>Usuario</th>
                                 <th>Rol</th>
-                                <th class="text-center">Acciones</th>
+                                <?php if ($puedoModificar): ?>
+                                    <th class="text-center">Acciones</th>
+                                <?php endif; ?>
                             </tr>
                         </thead>
                         <tbody>
@@ -366,10 +371,12 @@ $rolPorDefecto = array_search('lector', $asignables, true);
                                     </td>
                                     <td><code><?php echo htmlspecialchars($u['usuario']); ?></code></td>
                                     <td><span class="badge bg-<?php echo $badge[0]; ?>"><?php echo htmlspecialchars($badge[1]); ?></span></td>
+                                    <?php if ($puedoModificar): ?>
                                     <td class="text-center">
                                         <?php if ($puedeEditar): ?>
                                             <button type="button"
                                                     class="btn btn-sm btn-outline-primary border-0 me-1 btn-editar-usuario"
+                                                    onclick="abrirModalEditar(<?php echo (int)$u['id']; ?>)"
                                                     data-id="<?php echo (int)$u['id']; ?>"
                                                     data-usuario="<?php echo htmlspecialchars($u['usuario'], ENT_QUOTES); ?>"
                                                     data-nombre="<?php echo htmlspecialchars($u['nombre'] ?? '', ENT_QUOTES); ?>"
@@ -383,21 +390,24 @@ $rolPorDefecto = array_search('lector', $asignables, true);
                                         <?php endif; ?>
 
                                         <?php if ($esSuper && !$esMio): ?>
-                                            <form action="usuario.php" method="POST" class="d-inline"
-                                                  onsubmit="return confirm('¿Seguro que deseas eliminar a este usuario?');">
+                                              <form action="usuario.php" method="POST" class="d-inline"
+                                                  data-eliminar-usuario="<?php echo (int)$u['id']; ?>">
                                                 <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($csrf); ?>">
                                                 <input type="hidden" name="accion" value="eliminar">
                                                 <input type="hidden" name="id" value="<?php echo (int)$u['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="Eliminar usuario">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger border-0"
+                                                    onclick="return eliminarUsuario(<?php echo (int)$u['id']; ?>)"
+                                                    title="Eliminar usuario">
                                                     <i class="bi bi-trash-fill"></i>
                                                 </button>
                                             </form>
                                         <?php endif; ?>
                                     </td>
+                                    <?php endif; ?>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <tr><td colspan="4" class="text-center text-muted py-3">No hay usuarios registrados.</td></tr>
+                            <tr><td colspan="<?php echo $puedoModificar ? '4' : '3'; ?>" class="text-center text-muted py-3">No hay usuarios registrados.</td></tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
@@ -409,51 +419,9 @@ $rolPorDefecto = array_search('lector', $asignables, true);
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    const rolPorDefecto = "<?php echo (int)$rolPorDefecto; ?>";
-
-    document.querySelectorAll('.btn-editar-usuario').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const d = btn.dataset;
-            document.getElementById('userId').value = d.id;
-            document.getElementById('userUsername').value = d.usuario;
-            document.getElementById('userName').value = d.nombre;
-
-            const pass = document.getElementById('userPass');
-            pass.value = '';
-            pass.required = false;
-            pass.placeholder = 'Dejar en blanco para no cambiarla';
-            document.getElementById('passHelp').textContent = 'Si la dejas vacía se conserva la actual.';
-
-            const rol = document.getElementById('userRol');
-            rol.value = d.rolId;
-            const esMio = d.esMio === '1';
-            rol.disabled = esMio;
-            document.getElementById('rolHelp').classList.toggle('d-none', !esMio);
-
-            document.getElementById('formTitle').innerHTML = '<i class="bi bi-pencil-square me-1"></i> Editar Usuario #' + d.id;
-            document.getElementById('btnCancelar').classList.remove('d-none');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-    });
-
-    function limpiarFormulario() {
-        const form = document.getElementById('formUsuario');
-        form.reset();
-        document.getElementById('userId').value = '0';
-
-        const pass = document.getElementById('userPass');
-        pass.required = true;
-        pass.placeholder = 'Mínimo 10 caracteres';
-        document.getElementById('passHelp').textContent = 'Obligatoria para usuarios nuevos.';
-
-        const rol = document.getElementById('userRol');
-        rol.disabled = false;
-        if (rolPorDefecto !== "0") rol.value = rolPorDefecto;
-        document.getElementById('rolHelp').classList.add('d-none');
-
-        document.getElementById('formTitle').innerHTML = '<i class="bi bi-person-plus-fill me-1"></i> Nuevo Usuario';
-        document.getElementById('btnCancelar').classList.add('d-none');
-    }
+    const PUEDO_MODIFICAR = <?php echo json_encode($puedoModificar); ?>;
+    const ROL_POR_DEFECTO = "<?php echo (int)$rolPorDefecto; ?>";
 </script>
+<script src="usuario.js"></script>
 </body>
 </html>

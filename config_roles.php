@@ -5,7 +5,7 @@
 define('ROL_SUPERADMIN', 'superadmin');
 define('ROL_ADMIN',      'admin');
 define('ROL_SOPORTE',    'soporte');
-define('ROL_LECTOR',     'lector');
+define('ROL_LECTOR',     'lector'); // Rol con permisos de solo lectura
 define('ROL_EMPLEADO',   'empleado');
 
 /**
@@ -85,6 +85,10 @@ function obtenerPermisosPorRol($rol) {
  * Verifica si el usuario autenticado en la sesión tiene un permiso específico.
  */
 function tienePermiso($permisoRequerido) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
     if (!isset($_SESSION['rol']) || empty($_SESSION['rol'])) {
         return false;
     }
@@ -92,6 +96,13 @@ function tienePermiso($permisoRequerido) {
     $permisos = obtenerPermisosPorRol($_SESSION['rol']);
 
     return isset($permisos[$permisoRequerido]) && $permisos[$permisoRequerido] === true;
+}
+
+/**
+ * Helper rápido para comprobar si el usuario tiene permiso de edición/escritura.
+ */
+function tienePermisoEscritura() {
+    return tienePermiso('editar') || tienePermiso('crear_equipos');
 }
 
 /**
@@ -112,7 +123,7 @@ function esSoloPropios() {
 }
 
 /**
- * ID de la cuenta en sesión (0 si no existe: en ese caso no coincide con ningún equipo).
+ * ID de la cuenta en sesión (0 si no existe).
  */
 function miCuentaId() {
     return (int)($_SESSION['usuario_id'] ?? 0);
