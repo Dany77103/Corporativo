@@ -11,5 +11,3 @@ define('DB_HOST', 'localhost');
 define('DB_NAME', 'proyecto');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_USER', 'gsb_app');
-define('DB_PASS', 'TU_CONTRASEÑA_LARGA');
